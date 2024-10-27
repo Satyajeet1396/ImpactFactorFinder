@@ -83,8 +83,7 @@ if user_file:
     )
 
     st.success("Matching completed! Download your file.")
-    st.success("Note: In the downloaded Excel file, journal names, best matches, and impact factors highlighted in yellow indicate entries that were matched using fuzzy matching. This means the journal name in your file didn’t exactly match any name in the database but was closely matched based on similarity. Direct matches without any modification are left unhighlighted.
-")
+    st.success("Note: In the downloaded Excel file, journal names, best matches, and impact factors highlighted in yellow indicate entries that were matched using fuzzy matching. This means the journal name in your file didn’t exactly match any name in the database but was closely matched based on similarity. Direct matches without any modification are left unhighlighted.")
 else:
     st.info("Please upload your Journal Names Excel file to proceed.")
 st.info("Created by Dr. Satyajeet Patil")
