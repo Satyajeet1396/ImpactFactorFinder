@@ -14,22 +14,26 @@ def standardize_text(text):
         text = re.sub(r'[-:]', ' ', text)
     return text
 
+# Load the default Impact Factor database
+@st.cache
+def load_impact_factor_database():
+    url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/6ac70dd47398ff3b1fcbbf1e504d9859491f30d9/Impact%20Factor%202024.xlsx"
+    return pd.read_excel(url)
+
 # Title of the app
 st.title("Impact Factor Finder")
 st.write("Upload an Excel file with a column of journal names to find the best matches and their impact factors.")
 
-# Upload database Excel file
-database_file = st.file_uploader("Upload your Impact Factor Database Excel file", type="xlsx")
+# Load the default database
+df1 = load_impact_factor_database()
+df1.iloc[:, 0] = df1.iloc[:, 0].astype(str).apply(standardize_text)
+
 # Upload user file with journal names
 user_file = st.file_uploader("Upload your Excel file with Journal Names", type="xlsx")
 
-if database_file and user_file:
-    # Read the Excel files
-    df1 = pd.read_excel(database_file)  # Database file with journal names and impact factors
-    df2 = pd.read_excel(user_file)      # User file with journal names
-
-    # Standardize text in both DataFrames
-    df1.iloc[:, 0] = df1.iloc[:, 0].astype(str).apply(standardize_text)
+if user_file:
+    # Read the uploaded Excel file
+    df2 = pd.read_excel(user_file)
     df2.iloc[:, 0] = df2.iloc[:, 0].astype(str).apply(standardize_text)
 
     # Initialize results
@@ -80,4 +84,4 @@ if database_file and user_file:
 
     st.success("Matching completed! Download your file.")
 else:
-    st.info("Please upload both the Impact Factor Database and your Journal Names Excel files.")
+    st.info("Please upload your Journal Names Excel file to proceed.")
