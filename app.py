@@ -41,7 +41,7 @@ if user_file:
     # Initialize results
     results = []
 
-    # Match journal names
+    # Match journal names including the first row
     for journal_name in df2.iloc[:, 0]:
         match = df1[df1.iloc[:, 0] == journal_name]
         if not match.empty:
@@ -52,6 +52,9 @@ if user_file:
             if best_match and best_match[1] >= 80:
                 impact_factor = df1[df1.iloc[:, 0] == best_match[0]].iloc[0, 1]
                 results.append([journal_name, best_match[0], impact_factor])
+            else:
+                # Handle cases where no good match is found
+                results.append([journal_name, "No Match", "N/A"])
 
     # Convert results to DataFrame
     results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Impact Factor'])
@@ -88,7 +91,6 @@ if user_file:
     st.success("Note: In the downloaded Excel file, journal names, best matches, and impact factors highlighted in yellow indicate entries that were matched using fuzzy matching. This means the journal name in your file didn’t exactly match any name in the database but was closely matched based on similarity. Direct matches without any modification are left unhighlighted.")
 else:
     st.info("Please upload your Journal Names Excel file to proceed.")
-
 
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
