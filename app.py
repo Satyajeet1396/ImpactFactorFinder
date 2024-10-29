@@ -5,6 +5,8 @@ import re
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+import qrcode
+import base64
 
 # Standardize journal names
 def standardize_text(text):
@@ -91,7 +93,31 @@ else:
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
 
+# Title of the section
+st.title("Support our Research")
+st.write("Scan the QR code below to make a payment to: satyajeet1396@oksbi")
 
+# Generate the UPI QR code
+upi_url = "upi://pay?pa=satyajeet1396@oksbi&pn=Satyajeet Patil&cu=INR"
+qr = qrcode.make(upi_url)
+
+# Save the QR code image to a BytesIO object
+buffer = BytesIO()
+qr.save(buffer, format="PNG")
+buffer.seek(0)
+
+# Convert the image to Base64
+qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+# Center-align the QR code image using HTML and CSS
+st.markdown(
+    f"""
+    <div style="display: flex; justify-content: center; align-items: center;">
+        <img src="data:image/png;base64,{qr_base64}" width="200">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # Display the "Buy Me a Coffee" button as an image link
 st.markdown(
@@ -104,3 +130,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+st.info("A small donation from you can fuel our research journey, turning ideas into breakthroughs that can change lives!")
