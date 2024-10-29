@@ -93,11 +93,14 @@ st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/
 
 
 
-# Display custom "Buy Me a Coffee" button
-bmc_button = """
-<div align="center">
-    <a href="https://www.buymeacoffee.com/researcher13" target="_blank">
-        <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Support our Research" style="height: 50px; width: 217px;">
-    </a>
-</div>
-"""
+# Display the "Buy Me a Coffee" button as an image link
+st.markdown(
+    """
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="https://www.buymeacoffee.com/researcher13" target="_blank">
+            <img src="https://img.buymeacoffee.com/button-api/?text=Support our Research&emoji=&slug=researcher13&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Support our Research"/>
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
