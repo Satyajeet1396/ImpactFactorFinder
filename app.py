@@ -8,6 +8,7 @@ from io import BytesIO
 from functools import lru_cache
 from tqdm import tqdm
 import qrcode
+import base64
 
 # Advanced text preprocessing with common journal abbreviations
 JOURNAL_REPLACEMENTS = {
