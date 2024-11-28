@@ -7,6 +7,7 @@ from openpyxl.styles import PatternFill
 from io import BytesIO
 from functools import lru_cache
 from tqdm import tqdm
+import qrcode
 
 # Advanced text preprocessing with common journal abbreviations
 JOURNAL_REPLACEMENTS = {
