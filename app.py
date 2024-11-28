@@ -4,117 +4,99 @@ from rapidfuzz import process, fuzz
 import re
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
-from functools import lru_cache
 from io import BytesIO
+from functools import lru_cache
+from tqdm import tqdm
 
-# Cache the standardization function for repeated strings
+# Advanced text preprocessing with common journal abbreviations
+JOURNAL_REPLACEMENTS = {
+    'intl': 'international',
+    'int': 'international',
+    'natl': 'national',
+    'nat': 'national',
+    'sci': 'science',
+    'med': 'medical',
+    'res': 'research',
+    'tech': 'technology',
+    'eng': 'engineering',
+    'phys': 'physics',
+    'chem': 'chemistry',
+    'bio': 'biology',
+    'env': 'environmental',
+    'mgmt': 'management',
+    'dev': 'development',
+    'edu': 'education',
+    'univ': 'university',
+    'j\\.': 'journal',
+    'jr\\.': 'journal',
+    'jrnl\\.': 'journal',
+    'proc\\.': 'proceedings',
+    'rev\\.': 'review',
+    'q\\.': 'quarterly',
+}
+
 @lru_cache(maxsize=10000)
 def standardize_text(text):
-    if isinstance(text, str):
-        # Combine all string operations into one pass
-        text = re.sub(r'[-:]', ' ', text.lower().replace('&', 'and'))
-        # Remove multiple spaces
-        text = ' '.join(text.split())
-    return text
+    if not isinstance(text, str):
+        return ""
+    text = text.lower().strip()
+    text = text.replace('&', 'and')
+    text = re.sub(r'[-:]', ' ', text)
+    text = re.sub(r'\([^)]*?(print|online|www|web|issn|doi).*?\)', '', text, flags=re.IGNORECASE)
+    for abbr, full in JOURNAL_REPLACEMENTS.items():
+        text = re.sub(rf'\b{abbr}\b', full, text, flags=re.IGNORECASE)
+    text = re.sub(r'[^\w\s]', ' ', text)
+    return ' '.join(text.split())
 
-def batch_fuzzy_match(journal_batch, reference_data):
-    """Process a batch of journal names for fuzzy matching"""
+def preprocess_dataframe(df):
+    df.iloc[:, 0] = df.iloc[:, 0].astype(str).apply(standardize_text)
+    return df[df.iloc[:, 0].str.len() > 0]
+
+def process_journals(user_file, reference_file, batch_size=1000):
+    ref_df = preprocess_dataframe(pd.read_excel(reference_file))
+    user_df = preprocess_dataframe(pd.read_excel(user_file))
+
+    ref_dict = {}
+    for journal, impact in zip(ref_df.iloc[:, 0], ref_df.iloc[:, 1]):
+        if journal not in ref_dict:
+            ref_dict[journal] = []
+        ref_dict[journal].append(impact)
+
+    ref_journals = ref_df.iloc[:, 0].tolist()
+    journal_list = user_df.iloc[:, 0].tolist()
+
     results = []
-    reference_journals, impact_factors = reference_data
-    
-    for journal in journal_batch:
-        # Try to find a direct match first
-        if journal in impact_factors:
-            results.append((journal, journal, 100, impact_factors[journal]))
+    for journal in tqdm(journal_list, desc="Matching journals"):
+        if journal in ref_dict:
+            results.append((journal, journal, 100, ', '.join(map(str, ref_dict[journal]))))
             continue
-            
-        # Use fuzzy matching only if necessary
-        match = process.extractOne(
-            journal, 
-            reference_journals,
-            scorer=fuzz.ratio,
-            score_cutoff=80
-        )
+        match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=80)
         if match:
-            results.append((journal, match[0], match[1], impact_factors[match[0]]))
-    
-    return results
-
-def process_journals(file1, file2, batch_size=1000):
-    # Load and preprocess data
-    df1 = pd.read_excel(file1)
-    df2 = pd.read_excel(file2)
-    
-    df1.iloc[:, 0] = df1.iloc[:, 0].astype(str).apply(standardize_text)
-    df2.iloc[:, 0] = df2.iloc[:, 0].astype(str).apply(standardize_text)
-    
-    impact_factor_dict = dict(zip(df1.iloc[:, 0], df1.iloc[:, 1]))
-    reference_journals = df1.iloc[:, 0].tolist()
-    journal_list = df2.iloc[:, 0].tolist()
-    
-    batches = [
-        journal_list[i:i + batch_size] 
-        for i in range(0, len(journal_list), batch_size)
-    ]
-    
-    # Process batches
-    results = []
-    for batch in batches:
-        batch_results = batch_fuzzy_match(batch, (reference_journals, impact_factor_dict))
-        results.extend(batch_results)
-    
-    # Create results DataFrame
-    results_df = pd.DataFrame(
-        results,
-        columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor']
-    )
-    return results_df
+            results.append((journal, match[0], match[1], ', '.join(map(str, ref_dict[match[0]]))))
+    return pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
 
 def save_with_highlights(df):
-    # Save results with highlighting
     output = BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
-    
-    wb = load_workbook(output)
-    ws = wb.active
-    highlight_fill = PatternFill(
-        start_color="FFFF00",
-        end_color="FFFF00",
-        fill_type="solid"
-    )
-    
-    for idx, row in enumerate(df.itertuples(), start=2):
-        if row._1 != row._2:  # Compare Journal Name with Best Match
-            for col in range(1, 5):  # Highlight all columns
-                ws.cell(row=idx, column=col).fill = highlight_fill
-    
-    final_output = BytesIO()
-    wb.save(final_output)
-    final_output.seek(0)
-    return final_output
+    return output
 
 # Streamlit app
-st.title("Journal Impact Factor Finder")
+st.title("Enhanced Journal Impact Factor Finder")
+st.write("Upload your journal list to find the best matches and their impact factors.")
 
-st.write("Upload two Excel files:")
-st.write("1. **Impact Factor Database**: Contains journal names and their impact factors.")
-st.write("2. **Journal List**: Contains the journal names you want to match.")
+# File uploads
+user_file = st.file_uploader("Upload Your Journal List (Excel)", type="xlsx")
+reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/634e69a8b15cb2e308ffda203213f0b2bfea6085/Impact%20Factor%202024.xlsx"
 
-# File upload
-file1 = st.file_uploader("Upload Impact Factor Database", type="xlsx")
-file2 = st.file_uploader("Upload Journal List", type="xlsx")
-
-if file1 and file2:
+if user_file:
     with st.spinner("Processing..."):
-        results_df = process_journals(file1, file2, batch_size=1000)
+        results_df = process_journals(user_file, reference_file_url)
         highlighted_file = save_with_highlights(results_df)
     
-    st.success("Processing completed! Download your file below:")
-    
-    # Download button
+    st.success("Processing complete! Download your results below:")
     st.download_button(
-        label="Download Matched Journals",
+        label="Download Results",
         data=highlighted_file,
         file_name="matched_journals.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -123,12 +105,8 @@ if file1 and file2:
     st.write("### Sample Results")
     st.dataframe(results_df.head())
 else:
-    st.info("Please upload both files to proceed.")
+    st.info("Please upload your journal list to get started.")
 
-
-    st.success("Note: In the downloaded Excel file, journal names, best matches, and impact factors highlighted in yellow indicate entries that were matched using fuzzy matching. This means the journal name in your file didn’t exactly match any name in the database but was closely matched based on similarity. Direct matches without any modification are left unhighlighted.")
-else:
-    st.info("Please upload your Journal Names Excel file to proceed.")
 
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
