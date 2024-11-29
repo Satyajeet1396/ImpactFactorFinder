@@ -51,31 +51,69 @@ def standardize_text(text):
     return ' '.join(text.split())
 
 def preprocess_dataframe(df):
+    # Store original length
+    original_len = len(df)
+    
+    # Convert to string and standardize
     df.iloc[:, 0] = df.iloc[:, 0].astype(str).apply(standardize_text)
-    return df[df.iloc[:, 0].str.len() > 0]
+    
+    # Remove empty strings but keep duplicates
+    df = df[df.iloc[:, 0].str.len() > 0]
+    
+    # Show how many rows were removed
+    removed = original_len - len(df)
+    if removed > 0:
+        st.write(f"Removed {removed} empty or invalid rows")
+        
+    return df
 
 def process_journals(user_file, reference_file, batch_size=1000):
-    ref_df = preprocess_dataframe(pd.read_excel(reference_file))
-    user_df = preprocess_dataframe(pd.read_excel(user_file))
+    # Load dataframes and add debugging information
+    ref_df = pd.read_excel(reference_file)
+    user_df = pd.read_excel(user_file)
+    
+    st.write(f"Original reference file rows: {len(ref_df)}")
+    st.write(f"Original user file rows: {len(user_df)}")
+    
+    # Preprocess dataframes
+    ref_df = preprocess_dataframe(ref_df)
+    user_df = preprocess_dataframe(user_df)
+    
+    st.write(f"After preprocessing - reference file rows: {len(ref_df)}")
+    st.write(f"After preprocessing - user file rows: {len(user_df)}")
 
     ref_dict = {}
     for journal, impact in zip(ref_df.iloc[:, 0], ref_df.iloc[:, 1]):
         if journal not in ref_dict:
             ref_dict[journal] = []
         ref_dict[journal].append(impact)
+    
+    st.write(f"Number of unique journals in reference: {len(ref_dict)}")
 
     ref_journals = ref_df.iloc[:, 0].tolist()
     journal_list = user_df.iloc[:, 0].tolist()
+    
+    st.write(f"Number of journals to process: {len(journal_list)}")
 
     results = []
     for journal in tqdm(journal_list, desc="Matching journals"):
+        if pd.isna(journal) or str(journal).strip() == "":
+            continue
+            
         if journal in ref_dict:
             results.append((journal, journal, 100, ', '.join(map(str, ref_dict[journal]))))
             continue
+            
         match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=80)
         if match:
             results.append((journal, match[0], match[1], ', '.join(map(str, ref_dict[match[0]]))))
-    return pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+        else:
+            # Include unmatched journals with empty impact factor
+            results.append((journal, "No match found", 0, ""))
+    
+    results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    st.write(f"Final results rows: {len(results_df)}")
+    return results_df
 
 def save_with_highlights(df):
     output = BytesIO()
