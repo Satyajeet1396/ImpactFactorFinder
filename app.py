@@ -109,7 +109,6 @@ if user_file:
 else:
     st.info("Please upload your journal list to get started.")
 
-
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
 
