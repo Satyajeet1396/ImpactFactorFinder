@@ -105,48 +105,64 @@ st.title("Multi-File Journal Impact Factor Processor")
 st.write("Upload multiple journal lists to process them simultaneously.")
 
 # File uploads
-uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="file_uploader")
 reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/634e69a8b15cb2e308ffda203213f0b2bfea6085/Impact%20Factor%202024.xlsx"
+
+# Initialize session state for processed files if it doesn't exist
+if 'processed_files' not in st.session_state:
+    st.session_state.processed_files = set()
 
 if uploaded_files:
     # Load reference data once
     ref_df = pd.read_excel(reference_file_url)
     st.write(f"Reference database contains {len(ref_df)} entries")
     
-    # Process each file
+    # Process each file that hasn't been processed yet
     for uploaded_file in uploaded_files:
-        st.write(f"Processing {uploaded_file.name}...")
+        file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
         
-        try:
-            # Read and process the file
-            user_df = read_file(uploaded_file)
-            st.write(f"Found {len(user_df)} entries in {uploaded_file.name}")
+        if file_identifier not in st.session_state.processed_files:
+            st.write(f"Processing {uploaded_file.name}...")
             
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                results_df = process_single_file(user_df, ref_df)
+            try:
+                # Read and process the file
+                user_df = read_file(uploaded_file)
+                st.write(f"Found {len(user_df)} entries in {uploaded_file.name}")
                 
-                # Save results
-                output_format = uploaded_file.name.split('.')[-1].lower()
-                output_file = save_results(results_df, output_format)
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    results_df = process_single_file(user_df, ref_df)
+                    
+                    # Save results
+                    output_format = uploaded_file.name.split('.')[-1].lower()
+                    output_file = save_results(results_df, output_format)
+                    
+                    # Create download button for this file
+                    output_filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_matched.{output_format}"
+                    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if output_format == 'xlsx' else "text/csv"
+                    
+                    st.download_button(
+                        label=f"Download Results for {uploaded_file.name}",
+                        data=output_file,
+                        file_name=output_filename,
+                        mime=mime_type,
+                        key=f"download_{file_identifier}"
+                    )
+                    
+                    # Show sample results
+                    st.write(f"Sample results for {uploaded_file.name}:")
+                    st.dataframe(results_df.head())
+                    
+                    # Mark file as processed
+                    st.session_state.processed_files.add(file_identifier)
+                    
+            except Exception as e:
+                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+                continue
                 
-                # Create download button for this file
-                output_filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_matched.{output_format}"
-                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if output_format == 'xlsx' else "text/csv"
-                
-                st.download_button(
-                    label=f"Download Results for {uploaded_file.name}",
-                    data=output_file,
-                    file_name=output_filename,
-                    mime=mime_type
-                )
-                
-                # Show sample results
-                st.write(f"Sample results for {uploaded_file.name}:")
-                st.dataframe(results_df.head())
-                
-        except Exception as e:
-            st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-            continue
+    # Add a button to clear processed files and start fresh
+    if st.button("Clear All and Process New Files"):
+        st.session_state.processed_files.clear()
+        st.experimental_rerun()
             
 else:
     st.info("Please upload one or more journal lists (XLSX or CSV format) to get started.")
