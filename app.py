@@ -10,7 +10,7 @@ from tqdm import tqdm
 import qrcode
 import base64
 
-# Advanced text preprocessing with common journal abbreviations
+# Reuse the existing journal standardization functions
 JOURNAL_REPLACEMENTS = {
     'intl': 'international',
     'int': 'international',
@@ -50,27 +50,8 @@ def standardize_text(text):
     text = re.sub(r'[^\w\s]', ' ', text)
     return ' '.join(text.split())
 
-def preprocess_dataframe(df):
-    # Store original length
-    original_len = len(df)
-    
-    # Convert to string and standardize
-    df.iloc[:, 0] = df.iloc[:, 0].astype(str).apply(standardize_text)
-    
-    # Remove empty strings but keep duplicates
-    df = df[df.iloc[:, 0].str.len() > 0]
-    
-    # Show how many rows were removed
-    removed = original_len - len(df)
-    if removed > 0:
-        st.write(f"Removed {removed} empty or invalid rows")
-        
-    return df
-
 def read_file(file):
-    # Get the file extension
     file_extension = file.name.split('.')[-1].lower()
-    
     if file_extension == 'xlsx':
         return pd.read_excel(file)
     elif file_extension == 'csv':
@@ -78,45 +59,23 @@ def read_file(file):
     else:
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
-def save_results(df, file_format='xlsx'):
-    output = BytesIO()
-    if file_format == 'xlsx':
-        df.to_excel(output, index=False)
-    else:  # csv
-        df.to_csv(output, index=False)
-    output.seek(0)
-    return output
-
-def process_journals(user_file, reference_file, batch_size=1000):
-    # Load dataframes and add debugging information
-    ref_df = pd.read_excel(reference_file)
-    user_df = read_file(user_file)
+def process_single_file(user_df, ref_df):
+    # Preprocess the dataframes
+    user_df.iloc[:, 0] = user_df.iloc[:, 0].astype(str).apply(standardize_text)
+    ref_df.iloc[:, 0] = ref_df.iloc[:, 0].astype(str).apply(standardize_text)
     
-    st.write(f"Original reference file rows: {len(ref_df)}")
-    st.write(f"Original user file rows: {len(user_df)}")
-    
-    # Preprocess dataframes
-    ref_df = preprocess_dataframe(ref_df)
-    user_df = preprocess_dataframe(user_df)
-    
-    st.write(f"After preprocessing - reference file rows: {len(ref_df)}")
-    st.write(f"After preprocessing - user file rows: {len(user_df)}")
-
+    # Create reference dictionary
     ref_dict = {}
     for journal, impact in zip(ref_df.iloc[:, 0], ref_df.iloc[:, 1]):
         if journal not in ref_dict:
             ref_dict[journal] = []
         ref_dict[journal].append(impact)
     
-    st.write(f"Number of unique journals in reference: {len(ref_dict)}")
-
     ref_journals = ref_df.iloc[:, 0].tolist()
     journal_list = user_df.iloc[:, 0].tolist()
     
-    st.write(f"Number of journals to process: {len(journal_list)}")
-
     results = []
-    for journal in tqdm(journal_list, desc="Matching journals"):
+    for journal in tqdm(journal_list, desc="Processing journals"):
         if pd.isna(journal) or str(journal).strip() == "":
             continue
             
@@ -128,74 +87,88 @@ def process_journals(user_file, reference_file, batch_size=1000):
         if match:
             results.append((journal, match[0], match[1], ', '.join(map(str, ref_dict[match[0]]))))
         else:
-            # Include unmatched journals with empty impact factor
             results.append((journal, "No match found", 0, ""))
     
-    results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
-    # Sort by Match Score in ascending order
-    results_df = results_df.sort_values(by='Match Score', ascending=True)
-    st.write(f"Final results rows: {len(results_df)}")
-    return results_df
+    return pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+
+def save_results(df, file_format='xlsx'):
+    output = BytesIO()
+    if file_format == 'xlsx':
+        df.to_excel(output, index=False)
+    else:
+        df.to_csv(output, index=False)
+    output.seek(0)
+    return output
 
 # Streamlit app
-st.title("Enhanced Journal Impact Factor Finder")
-st.write("Upload your journal list to find the best matches and their impact factors.")
+st.title("Multi-File Journal Impact Factor Processor")
+st.write("Upload multiple journal lists to process them simultaneously.")
 
 # File uploads
-user_file = st.file_uploader("Upload Your Journal List (Excel/CSV)", type=["xlsx", "csv"])
+uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
 reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/634e69a8b15cb2e308ffda203213f0b2bfea6085/Impact%20Factor%202024.xlsx"
 
-if user_file:
-    # Get the file extension for the output format
-    output_format = user_file.name.split('.')[-1].lower()
-    input_filename = user_file.name.rsplit('.', 1)[0]  # Get filename without extension
+if uploaded_files:
+    # Load reference data once
+    ref_df = pd.read_excel(reference_file_url)
+    st.write(f"Reference database contains {len(ref_df)} entries")
     
-    with st.spinner("Processing..."):
-        results_df = process_journals(user_file, reference_file_url)
-        output_file = save_results(results_df, output_format)
-    
-    st.success("Processing complete! Download your results below:")
-    
-    # Set appropriate mime type and file extension for download
-    if output_format == 'xlsx':
-        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        file_extension = "xlsx"
-    else:
-        mime = "text/csv"
-        file_extension = "csv"
-    
-    st.download_button(
-        label="Download Results",
-        data=output_file,
-        file_name=f"{input_filename}_matched_journals.{file_extension}",
-        mime=mime
-    )
-    
-    st.write("### Sample Results")
-    st.dataframe(results_df.head())
+    # Process each file
+    for uploaded_file in uploaded_files:
+        st.write(f"Processing {uploaded_file.name}...")
+        
+        try:
+            # Read and process the file
+            user_df = read_file(uploaded_file)
+            st.write(f"Found {len(user_df)} entries in {uploaded_file.name}")
+            
+            with st.spinner(f"Processing {uploaded_file.name}..."):
+                results_df = process_single_file(user_df, ref_df)
+                
+                # Save results
+                output_format = uploaded_file.name.split('.')[-1].lower()
+                output_file = save_results(results_df, output_format)
+                
+                # Create download button for this file
+                output_filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_matched.{output_format}"
+                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if output_format == 'xlsx' else "text/csv"
+                
+                st.download_button(
+                    label=f"Download Results for {uploaded_file.name}",
+                    data=output_file,
+                    file_name=output_filename,
+                    mime=mime_type
+                )
+                
+                # Show sample results
+                st.write(f"Sample results for {uploaded_file.name}:")
+                st.dataframe(results_df.head())
+                
+        except Exception as e:
+            st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+            continue
+            
 else:
-    st.info("Please upload your journal list (XLSX or CSV format) to get started.")
+    st.info("Please upload one or more journal lists (XLSX or CSV format) to get started.")
 
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
 
-# Title of the section
+# Support section
 st.title("Support our Research")
 st.write("Scan the QR code below to make a payment to: satyajeet1396@oksbi")
 
-# Generate the UPI QR code
+# Generate UPI QR code
 upi_url = "upi://pay?pa=satyajeet1396@oksbi&pn=Satyajeet Patil&cu=INR"
 qr = qrcode.make(upi_url)
 
-# Save the QR code image to a BytesIO object
+# Save QR code to BytesIO
 buffer = BytesIO()
 qr.save(buffer, format="PNG")
 buffer.seek(0)
-
-# Convert the image to Base64
 qr_base64 = base64.b64encode(buffer.getvalue()).decode()
 
-# Center-align the QR code image using HTML and CSS
+# Display QR code
 st.markdown(
     f"""
     <div style="display: flex; justify-content: center; align-items: center;">
@@ -205,7 +178,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Display the "Buy Me a Coffee" button as an image link
+# Buy Me a Coffee button
 st.markdown(
     """
     <div style="text-align: center; margin-top: 20px;">
@@ -219,7 +192,7 @@ st.markdown(
 
 st.info("A small donation from you can fuel our research journey, turning ideas into breakthroughs that can change lives!")
 
-# Add the donation message
+# Donation message
 st.markdown("""
     <div style='text-align: center; padding: 1rem; background-color: #f0f2f6; border-radius: 10px; margin: 1rem 0;'>
         <h3>🙏 Support Our Work</h3>
