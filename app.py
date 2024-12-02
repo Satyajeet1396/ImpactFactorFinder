@@ -89,7 +89,10 @@ def process_single_file(user_df, ref_df):
         else:
             results.append((journal, "No match found", 0, ""))
     
-    return pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    # Sort by Match Score in ascending order (poorest matches first)
+    results_df = results_df.sort_values(by='Match Score', ascending=True)
+    return results_df
 
 def save_results(df, file_format='xlsx'):
     output = BytesIO()
