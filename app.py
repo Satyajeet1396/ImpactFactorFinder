@@ -104,13 +104,15 @@ def save_results(df, file_format='xlsx'):
 st.title("Multi-File Journal Impact Factor Processor")
 st.write("Upload multiple journal lists to process them simultaneously.")
 
+# Initialize session states
+if 'processed_files' not in st.session_state:
+    st.session_state.processed_files = set()
+if 'processed_results' not in st.session_state:
+    st.session_state.processed_results = {}
+
 # File uploads
 uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="file_uploader")
 reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/634e69a8b15cb2e308ffda203213f0b2bfea6085/Impact%20Factor%202024.xlsx"
-
-# Initialize session state for processed files if it doesn't exist
-if 'processed_files' not in st.session_state:
-    st.session_state.processed_files = set()
 
 if uploaded_files:
     # Load reference data once
@@ -132,36 +134,49 @@ if uploaded_files:
                 with st.spinner(f"Processing {uploaded_file.name}..."):
                     results_df = process_single_file(user_df, ref_df)
                     
-                    # Save results
+                    # Save results to session state
                     output_format = uploaded_file.name.split('.')[-1].lower()
                     output_file = save_results(results_df, output_format)
                     
-                    # Create download button for this file
-                    output_filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_matched.{output_format}"
-                    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if output_format == 'xlsx' else "text/csv"
-                    
-                    st.download_button(
-                        label=f"Download Results for {uploaded_file.name}",
-                        data=output_file,
-                        file_name=output_filename,
-                        mime=mime_type,
-                        key=f"download_{file_identifier}"
-                    )
-                    
-                    # Show sample results
-                    st.write(f"Sample results for {uploaded_file.name}:")
-                    st.dataframe(results_df.head())
+                    st.session_state.processed_results[file_identifier] = {
+                        'results_df': results_df,
+                        'output_file': output_file,
+                        'output_format': output_format,
+                        'filename': uploaded_file.name
+                    }
                     
                     # Mark file as processed
                     st.session_state.processed_files.add(file_identifier)
-                    
+            
             except Exception as e:
                 st.error(f"Error processing {uploaded_file.name}: {str(e)}")
                 continue
+    
+    # Display results for all processed files
+    if st.session_state.processed_results:
+        st.write("### Processed Files Results")
+        for file_id, data in st.session_state.processed_results.items():
+            with st.expander(f"Results for {data['filename']}", expanded=True):
+                # Create download button for this file
+                output_filename = f"{data['filename'].rsplit('.', 1)[0]}_matched.{data['output_format']}"
+                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if data['output_format'] == 'xlsx' else "text/csv"
                 
+                st.download_button(
+                    label=f"Download Results for {data['filename']}",
+                    data=data['output_file'],
+                    file_name=output_filename,
+                    mime=mime_type,
+                    key=f"download_{file_id}"
+                )
+                
+                # Show sample results
+                st.write(f"Sample results:")
+                st.dataframe(data['results_df'].head())
+    
     # Add a button to clear processed files and start fresh
     if st.button("Clear All and Process New Files"):
         st.session_state.processed_files.clear()
+        st.session_state.processed_results.clear()
         st.experimental_rerun()
             
 else:
