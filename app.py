@@ -132,6 +132,8 @@ def process_journals(user_file, reference_file, batch_size=1000):
             results.append((journal, "No match found", 0, ""))
     
     results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    # Sort by Match Score in ascending order
+    results_df = results_df.sort_values(by='Match Score', ascending=True)
     st.write(f"Final results rows: {len(results_df)}")
     return results_df
 
@@ -146,6 +148,7 @@ reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/63
 if user_file:
     # Get the file extension for the output format
     output_format = user_file.name.split('.')[-1].lower()
+    input_filename = user_file.name.rsplit('.', 1)[0]  # Get filename without extension
     
     with st.spinner("Processing..."):
         results_df = process_journals(user_file, reference_file_url)
@@ -164,7 +167,7 @@ if user_file:
     st.download_button(
         label="Download Results",
         data=output_file,
-        file_name=f"matched_journals.{file_extension}",
+        file_name=f"{input_filename}_matched_journals.{file_extension}",
         mime=mime
     )
     
