@@ -67,10 +67,30 @@ def preprocess_dataframe(df):
         
     return df
 
+def read_file(file):
+    # Get the file extension
+    file_extension = file.name.split('.')[-1].lower()
+    
+    if file_extension == 'xlsx':
+        return pd.read_excel(file)
+    elif file_extension == 'csv':
+        return pd.read_csv(file)
+    else:
+        raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
+
+def save_results(df, file_format='xlsx'):
+    output = BytesIO()
+    if file_format == 'xlsx':
+        df.to_excel(output, index=False)
+    else:  # csv
+        df.to_csv(output, index=False)
+    output.seek(0)
+    return output
+
 def process_journals(user_file, reference_file, batch_size=1000):
     # Load dataframes and add debugging information
     ref_df = pd.read_excel(reference_file)
-    user_df = pd.read_excel(user_file)
+    user_df = read_file(user_file)
     
     st.write(f"Original reference file rows: {len(ref_df)}")
     st.write(f"Original user file rows: {len(user_df)}")
@@ -115,37 +135,43 @@ def process_journals(user_file, reference_file, batch_size=1000):
     st.write(f"Final results rows: {len(results_df)}")
     return results_df
 
-def save_with_highlights(df):
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
-    return output
-
 # Streamlit app
 st.title("Enhanced Journal Impact Factor Finder")
 st.write("Upload your journal list to find the best matches and their impact factors.")
 
 # File uploads
-user_file = st.file_uploader("Upload Your Journal List (Excel)", type="xlsx")
+user_file = st.file_uploader("Upload Your Journal List (Excel/CSV)", type=["xlsx", "csv"])
 reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/634e69a8b15cb2e308ffda203213f0b2bfea6085/Impact%20Factor%202024.xlsx"
 
 if user_file:
+    # Get the file extension for the output format
+    output_format = user_file.name.split('.')[-1].lower()
+    
     with st.spinner("Processing..."):
         results_df = process_journals(user_file, reference_file_url)
-        highlighted_file = save_with_highlights(results_df)
+        output_file = save_results(results_df, output_format)
     
     st.success("Processing complete! Download your results below:")
+    
+    # Set appropriate mime type and file extension for download
+    if output_format == 'xlsx':
+        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        file_extension = "xlsx"
+    else:
+        mime = "text/csv"
+        file_extension = "csv"
+    
     st.download_button(
         label="Download Results",
-        data=highlighted_file,
-        file_name="matched_journals.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        data=output_file,
+        file_name=f"matched_journals.{file_extension}",
+        mime=mime
     )
     
     st.write("### Sample Results")
     st.dataframe(results_df.head())
 else:
-    st.info("Please upload your journal list to get started.")
+    st.info("Please upload your journal list (XLSX or CSV format) to get started.")
 
 st.info("Created by Dr. Satyajeet Patil")
 st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
