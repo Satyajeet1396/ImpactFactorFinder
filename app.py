@@ -95,7 +95,7 @@ def process_single_file(user_df, ref_df):
             results.append((journal, journal, 100, ', '.join(map(str, ref_dict[journal]))))
             continue
             
-        match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=95)
+        match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=90)
         if match:
             results.append((journal, match[0], match[1], ', '.join(map(str, ref_dict[match[0]]))))
         else:
@@ -201,7 +201,7 @@ with st.expander("ℹ️ Click here to learn about this app", expanded=False):
         <h3>📊 Match Score Guide</h3>
         <ul>
         <li><strong>100</strong>: Perfect match</li>
-        <li><strong>95-99</strong>: Good match with minor variations</li>
+        <li><strong>90-99</strong>: Good match with minor variations</li>
         <li><strong>0</strong>: No match found</li>
         </ul>
         </div>
