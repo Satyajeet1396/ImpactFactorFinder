@@ -60,6 +60,20 @@ def read_file(file):
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
 def process_single_file(user_df, ref_df):
+    # Add CSS for highlighted headers
+    st.markdown("""
+        <style>
+        .highlight {
+            background-color: #0066cc;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            margin: 0 2px;
+            font-weight: bold;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Find the "Source title" column
     source_title_col = None
     for col in user_df.columns:
@@ -100,18 +114,41 @@ def process_single_file(user_df, ref_df):
         else:
             results.append((journal, "No match found", 0, ""))
     
-    # Create DataFrame with match results
-    results_df = pd.DataFrame(results, columns=['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    # Create DataFrame with match results and style the new column headers
+    new_columns = {
+        'Processed Journal Name': '<div class="highlight">Processed Journal Name</div>',
+        'Best Match': '<div class="highlight">Best Match</div>',
+        'Match Score': '<div class="highlight">Match Score</div>',
+        'Impact Factor': '<div class="highlight">Impact Factor</div>'
+    }
+    results_df = pd.DataFrame(results, columns=list(new_columns.keys()))
     
-    # Sort by Match Score in ascending order (poorest matches first)
-    results_df = results_df.sort_values(by='Match Score', ascending=True)
+    # Add an empty column after existing data
+    user_df[''] = ''
     
-    # Combine original data with match results
-    final_df = pd.concat([user_df, results_df[['Best Match', 'Match Score', 'Impact Factor']]], axis=1)
+    # Add processed journal name and match results
+    final_df = pd.concat([
+        user_df,
+        results_df
+    ], axis=1)
+    
+    # Sort by Match Score in ascending order
+    final_df = final_df.sort_values(by='Match Score', ascending=True)
+    
+    # Rename the new columns with highlighted HTML
+    for old_col, new_col in new_columns.items():
+        final_df = final_df.rename(columns={old_col: new_col})
+    
+    # Display the DataFrame with styled headers
+    st.write("### Results Preview")
+    st.markdown(final_df.head().to_html(escape=False), unsafe_allow_html=True)
     
     return final_df
 
 def save_results(df, file_format='xlsx'):
+    # Remove HTML styling from column names before saving
+    df = df.rename(columns=lambda x: x.replace('<div class="highlight">', '').replace('</div>', ''))
+    
     output = BytesIO()
     if file_format == 'xlsx':
         df.to_excel(output, index=False)
