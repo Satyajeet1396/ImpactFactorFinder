@@ -105,6 +105,28 @@ def save_results(df, file_format='xlsx'):
 
 # Streamlit app
 st.title("Multi-File Journal Impact Factor Processor")
+
+# Add app information
+st.markdown("""
+### 📚 About This App
+This app helps you find impact factors for your journal lists. It can:
+- Process multiple Excel/CSV files at once
+- Handle journal name variations and abbreviations
+- Sort results by match quality (poorest matches first)
+- Export results in the same format as your input files
+
+### 🔍 How to Use
+1. Upload one or more Excel/CSV files containing journal names
+2. Wait for processing to complete
+3. Review results (sorted with poorest matches first)
+4. Download processed results for each file
+
+### 📊 Match Score Guide
+- **100**: Perfect match
+- **80-99**: Good match with minor variations
+- **0**: No match found
+""")
+
 st.write("Upload multiple journal lists to process them simultaneously.")
 
 # Initialize session states
