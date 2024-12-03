@@ -362,12 +362,4 @@ with st.expander("🤝 Support Our Research", expanded=False):
             unsafe_allow_html=True
         )
 
-st.markdown("""
-    <div style='text-align: center; padding: 1rem; background-color: #f0f2f6; border-radius: 10px; margin: 1rem 0;'>
-        <h3>🙏 Support Our Work</h3>
-        <p>Your support helps us continue developing free tools for the research community.</p>
-        <p>Every contribution, no matter how small, makes a difference!</p>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.info("A small donation from you can fuel our research journey, turning ideas into breakthroughs that can change lives!")
