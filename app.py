@@ -95,7 +95,7 @@ def process_single_file(user_df, ref_df):
             results.append((journal, journal, 100, ', '.join(map(str, ref_dict[journal]))))
             continue
             
-        match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=80)
+        match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=95)
         if match:
             results.append((journal, match[0], match[1], ', '.join(map(str, ref_dict[match[0]]))))
         else:
@@ -161,7 +161,7 @@ def save_results(df, file_format='xlsx'):
 st.title("Multi-File Journal Impact Factor Processor")
 
 # Add collapsible app information
-with st.expander("ℹ️ Click here to learn about this app", expanded=True):
+with st.expander("ℹ️ Click here to learn about this app", expanded=False):
     st.markdown("""
         <style>
         .app-info {
@@ -201,7 +201,7 @@ with st.expander("ℹ️ Click here to learn about this app", expanded=True):
         <h3>📊 Match Score Guide</h3>
         <ul>
         <li><strong>100</strong>: Perfect match</li>
-        <li><strong>80-99</strong>: Good match with minor variations</li>
+        <li><strong>95-99</strong>: Good match with minor variations</li>
         <li><strong>0</strong>: No match found</li>
         </ul>
         </div>
