@@ -61,6 +61,11 @@ def read_file(file):
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
 def process_single_file(user_df, ref_df):
+    # Print debugging information about reference data
+    st.write(f"Reference data shape: {ref_df.shape}")
+    st.write("First few rows of reference data:")
+    st.write(ref_df.head())
+    
     # Find the "Source title" column
     source_title_col = None
     for col in user_df.columns:
@@ -72,11 +77,15 @@ def process_single_file(user_df, ref_df):
         st.error("No 'Source title' column found in the input file. Please ensure your file has a column containing 'Source title'.")
         return None
     
+    st.write(f"Found Source title column: {source_title_col}")
+    
     # Create a copy of journal names for processing
     journals = user_df[source_title_col].astype(str).apply(standardize_text)
     
     # Create reference dictionary
     ref_dict = {}
+    ref_df.iloc[:, 0] = ref_df.iloc[:, 0].astype(str).apply(standardize_text)  # Standardize reference journal names
+    
     for journal, impact in zip(ref_df.iloc[:, 0], ref_df.iloc[:, 1]):
         if journal not in ref_dict:
             ref_dict[journal] = []
@@ -84,6 +93,11 @@ def process_single_file(user_df, ref_df):
     
     ref_journals = ref_df.iloc[:, 0].tolist()
     journal_list = journals.tolist()
+    
+    # Print some sample standardized journals
+    st.write("Sample of standardized journal names:")
+    st.write("From your data:", journal_list[:3])
+    st.write("From reference data:", ref_journals[:3])
     
     results = []
     for journal in tqdm(journal_list, desc="Processing journals"):
@@ -105,6 +119,20 @@ def process_single_file(user_df, ref_df):
     new_columns = ['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor']
     results_df = pd.DataFrame(results, columns=new_columns)
     
+    # Print matching statistics
+    total = len(results_df)
+    perfect_matches = len(results_df[results_df['Match Score'] == 100])
+    good_matches = len(results_df[(results_df['Match Score'] >= 90) & (results_df['Match Score'] < 100)])
+    no_matches = len(results_df[results_df['Match Score'] == 0])
+    
+    st.write(f"""
+    Matching Statistics:
+    - Total journals: {total}
+    - Perfect matches (100): {perfect_matches} ({perfect_matches/total*100:.1f}%)
+    - Good matches (90-99): {good_matches} ({good_matches/total*100:.1f}%)
+    - No matches: {no_matches} ({no_matches/total*100:.1f}%)
+    """)
+    
     # Add an empty column after existing data
     user_df[''] = ''
     
@@ -116,9 +144,6 @@ def process_single_file(user_df, ref_df):
     
     # Sort by Match Score in ascending order
     final_df = final_df.sort_values(by='Match Score', ascending=True)
-    
-    # Store the new column names for highlighting in Excel
-    final_df.attrs['new_columns'] = new_columns
     
     return final_df
 
@@ -217,13 +242,17 @@ if 'processed_results' not in st.session_state:
 
 # File uploads
 uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="file_uploader")
-reference_file_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/6f99aed8fc7d0c558b7cd35ecb022e2500c8aa16/Impact%20Factor%202024.xlsx"
+
+# Reference file loading with error handling
+try:
+    reference_file_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/6f99aed8fc7d0c558b7cd35ecb022e2500c8aa16/Impact%20Factor%202024.xlsx"
+    ref_df = pd.read_excel(reference_file_url)
+    st.write(f"Successfully loaded reference database with {len(ref_df)} entries")
+except Exception as e:
+    st.error(f"Error loading reference database: {str(e)}")
+    st.stop()
 
 if uploaded_files:
-    # Load reference data once
-    ref_df = pd.read_excel(reference_file_url)
-    st.write(f"Reference database contains {len(ref_df)} entries")
-    
     # Process each file that hasn't been processed yet
     for uploaded_file in uploaded_files:
         file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
