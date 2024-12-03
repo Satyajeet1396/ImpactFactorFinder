@@ -307,8 +307,12 @@ if uploaded_files:
 else:
     st.info("Please upload one or more journal lists (XLSX or CSV format) to get started.")
 
-st.info("Created by Dr. Satyajeet Patil")
-st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
+if __name__ == "__main__":
+    main()
+    # Add credits section after main app
+    st.divider()
+    st.info("Created by Dr. Satyajeet Patil")
+    st.info("For more cool apps like this visit: https://patilsatyajeet.wixsite.com/home/python")
 
     # Support section in expander
     with st.expander("🤝 Support Our Research", expanded=False):
