@@ -106,8 +106,8 @@ def save_results(df, file_format='xlsx'):
 # Streamlit app
 st.title("Multi-File Journal Impact Factor Processor")
 
-# Add app information in a container with custom styling
-with st.container():
+# Add collapsible app information
+with st.expander("ℹ️ Click here to learn about this app", expanded=True):
     st.markdown("""
         <style>
         .app-info {
@@ -115,6 +115,14 @@ with st.container():
             border-radius: 10px;
             background-color: #f0f2f6;
             margin: 10px 0;
+        }
+        .app-info h3 {
+            color: #0066cc;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        .app-info ul, .app-info ol {
+            margin-bottom: 20px;
         }
         </style>
         <div class="app-info">
