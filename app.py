@@ -3,12 +3,13 @@ import pandas as pd
 from rapidfuzz import process, fuzz
 import re
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Font
 from io import BytesIO
 from functools import lru_cache
 from tqdm import tqdm
 import qrcode
 import base64
+import openpyxl
 
 # Reuse the existing journal standardization functions
 JOURNAL_REPLACEMENTS = {
@@ -60,20 +61,6 @@ def read_file(file):
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
 def process_single_file(user_df, ref_df):
-    # Add CSS for highlighted headers
-    st.markdown("""
-        <style>
-        .highlight {
-            background-color: #0066cc;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            margin: 0 2px;
-            font-weight: bold;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
     # Find the "Source title" column
     source_title_col = None
     for col in user_df.columns:
@@ -114,14 +101,9 @@ def process_single_file(user_df, ref_df):
         else:
             results.append((journal, "No match found", 0, ""))
     
-    # Create DataFrame with match results and style the new column headers
-    new_columns = {
-        'Processed Journal Name': '<div class="highlight">Processed Journal Name</div>',
-        'Best Match': '<div class="highlight">Best Match</div>',
-        'Match Score': '<div class="highlight">Match Score</div>',
-        'Impact Factor': '<div class="highlight">Impact Factor</div>'
-    }
-    results_df = pd.DataFrame(results, columns=list(new_columns.keys()))
+    # Create DataFrame with match results
+    new_columns = ['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor']
+    results_df = pd.DataFrame(results, columns=new_columns)
     
     # Add an empty column after existing data
     user_df[''] = ''
@@ -135,25 +117,43 @@ def process_single_file(user_df, ref_df):
     # Sort by Match Score in ascending order
     final_df = final_df.sort_values(by='Match Score', ascending=True)
     
-    # Rename the new columns with highlighted HTML
-    for old_col, new_col in new_columns.items():
-        final_df = final_df.rename(columns={old_col: new_col})
-    
-    # Display the DataFrame with styled headers
-    st.write("### Results Preview")
-    st.markdown(final_df.head().to_html(escape=False), unsafe_allow_html=True)
+    # Store the new column names for highlighting in Excel
+    final_df.attrs['new_columns'] = new_columns
     
     return final_df
 
 def save_results(df, file_format='xlsx'):
-    # Remove HTML styling from column names before saving
-    df = df.rename(columns=lambda x: x.replace('<div class="highlight">', '').replace('</div>', ''))
-    
     output = BytesIO()
+    
     if file_format == 'xlsx':
-        df.to_excel(output, index=False)
+        # Save to Excel with styled headers
+        writer = pd.ExcelWriter(output, engine='openpyxl')
+        df.to_excel(writer, index=False)
+        
+        # Get the workbook and worksheet
+        workbook = writer.book
+        worksheet = writer.sheets['Sheet1']
+        
+        # Create fill style for new columns
+        header_fill = PatternFill(start_color='0066CC',
+                                end_color='0066CC',
+                                fill_type='solid')
+        
+        # Get new column names from DataFrame attributes
+        new_columns = df.attrs.get('new_columns', [])
+        
+        # Apply highlighting to new column headers
+        for cell in worksheet[1]:
+            if cell.value in new_columns:
+                cell.fill = header_fill
+                cell.font = Font(color='FFFFFF', bold=True)
+        
+        # Save the workbook
+        writer.close()
     else:
+        # For CSV, just save normally
         df.to_csv(output, index=False)
+    
     output.seek(0)
     return output
 
