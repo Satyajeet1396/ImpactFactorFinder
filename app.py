@@ -60,9 +60,19 @@ def read_file(file):
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
 def process_single_file(user_df, ref_df):
-    # Preprocess the dataframes
-    user_df.iloc[:, 0] = user_df.iloc[:, 0].astype(str).apply(standardize_text)
-    ref_df.iloc[:, 0] = ref_df.iloc[:, 0].astype(str).apply(standardize_text)
+    # Find the "Source title" column
+    source_title_col = None
+    for col in user_df.columns:
+        if 'source title' in str(col).lower():
+            source_title_col = col
+            break
+    
+    if source_title_col is None:
+        st.error("No 'Source title' column found in the input file. Please ensure your file has a column containing 'Source title'.")
+        return None
+    
+    # Create a copy of journal names for processing
+    journals = user_df[source_title_col].astype(str).apply(standardize_text)
     
     # Create reference dictionary
     ref_dict = {}
@@ -72,11 +82,12 @@ def process_single_file(user_df, ref_df):
         ref_dict[journal].append(impact)
     
     ref_journals = ref_df.iloc[:, 0].tolist()
-    journal_list = user_df.iloc[:, 0].tolist()
+    journal_list = journals.tolist()
     
     results = []
     for journal in tqdm(journal_list, desc="Processing journals"):
         if pd.isna(journal) or str(journal).strip() == "":
+            results.append(("No journal name", "No match found", 0, ""))
             continue
             
         if journal in ref_dict:
@@ -89,10 +100,16 @@ def process_single_file(user_df, ref_df):
         else:
             results.append((journal, "No match found", 0, ""))
     
-    results_df = pd.DataFrame(results, columns=['Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    # Create DataFrame with match results
+    results_df = pd.DataFrame(results, columns=['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor'])
+    
     # Sort by Match Score in ascending order (poorest matches first)
     results_df = results_df.sort_values(by='Match Score', ascending=True)
-    return results_df
+    
+    # Combine original data with match results
+    final_df = pd.concat([user_df, results_df[['Best Match', 'Match Score', 'Impact Factor']]], axis=1)
+    
+    return final_df
 
 def save_results(df, file_format='xlsx'):
     output = BytesIO()
@@ -130,14 +147,15 @@ with st.expander("ℹ️ Click here to learn about this app", expanded=True):
         <p>This app helps you find impact factors for your journal lists. It can:</p>
         <ul>
         <li>Process multiple Excel/CSV files at once</li>
+        <li>Automatically finds the 'Source title' column in your data</li>
         <li>Handle journal name variations and abbreviations</li>
         <li>Sort results by match quality (poorest matches first)</li>
-        <li>Export results in the same format as your input files</li>
+        <li>Preserves all original columns and adds match results at the end</li>
         </ul>
         
         <h3>🔍 How to Use</h3>
         <ol>
-        <li>Upload one or more Excel/CSV files containing journal names</li>
+        <li>Upload one or more Excel/CSV files containing a 'Source title' column</li>
         <li>Wait for processing to complete</li>
         <li>Review results (sorted with poorest matches first)</li>
         <li>Download processed results for each file</li>
