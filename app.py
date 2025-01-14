@@ -121,8 +121,6 @@ def process_single_file(user_df, ref_df):
     - No matches: {no_matches} ({no_matches/total*100:.1f}%)
     """)
     
-    # Add an empty column after existing data
-    user_df[''] = ''
     
     # Add processed journal name and match results
     final_df = pd.concat([
