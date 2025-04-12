@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-from fuzzywuzzy import process, fuzz
 from io import BytesIO
 from tqdm import tqdm
 import base64
+from rapidfuzz import process, fuzz
 
 tqdm.pandas()
 
