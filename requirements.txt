@@ -4,6 +4,4 @@ openpyxl
 rapidfuzz
 qrcode
 tqdm
-fuzzywuzzy
-BytesIO
-base64
+rapidfuzz
