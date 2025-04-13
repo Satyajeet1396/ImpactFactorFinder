@@ -8,3 +8,5 @@ rapidfuzz
 xlsxwriter
 matplotlib
 seaborn
+fuzzywuzzy
+python-Levenshtein
