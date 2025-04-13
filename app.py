@@ -1,136 +1,99 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from tqdm import tqdm
+import matplotlib.pyplot as plt
+import seaborn as sns
+from fuzzywuzzy import process
 import base64
-from rapidfuzz import process, fuzz
 
-tqdm.pandas()
+# URLs for reference data
+impact_factor_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/6f99aed8fc7d0c558b7cd35ecb022e2500c8aa16/Impact%20Factor%202024.xlsx"
+quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/45236668ebf6c9283a7f5e49457fa78681529f26/scimagojr%202024.csv"
 
-st.set_page_config(page_title="Journal SJR & Quartile Finder", layout="wide")
-
-st.title("📚 Journal Impact and Quartile Finder (SCImago 2024)")
-
-def standardize_text(s):
-    return str(s).strip().lower()
-
-# Load SCImago reference data
+# Load reference data
 @st.cache_data
-def load_scimago_data():
-    url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/45236668ebf6c9283a7f5e49457fa78681529f26/scimagojr%202024.csv"
-    df = pd.read_csv(url, sep=';')
-    df['Title'] = df['Title'].astype(str).apply(standardize_text)
-    return df
+def load_reference_data():
+    impact_df = pd.read_excel(impact_factor_url)
+    quartile_df = pd.read_csv(quartile_url)
+    return impact_df, quartile_df
 
-scimago_df = load_scimago_data()
-st.success(f"✅ Loaded SCImago data with {len(scimago_df)} journal entries.")
+impact_df, quartile_df = load_reference_data()
 
-# File upload
-uploaded_file = st.file_uploader("📂 Upload your journal list (CSV, XLSX)", type=["csv", "xlsx"])
+# Prepare journal names
+impact_df['Journal Name Clean'] = impact_df['Journal Name'].str.lower().str.strip()
+quartile_df['Title Clean'] = quartile_df['Title'].str.lower().str.strip()
 
-def read_user_file(file):
-    if file.name.endswith(".csv"):
-        return pd.read_csv(file)
-    elif file.name.endswith(".xlsx"):
-        return pd.read_excel(file)
-    return None
+# Upload user file
+st.title("Journal Impact Factor & Quartile Finder")
+uploaded_file = st.file_uploader("Upload your journal file (Excel with 'Journal' column)", type=['xlsx'])
 
-# Processing function
-def process_single_file(user_df, scimago_df):
-    source_title_col = None
-    for col in user_df.columns:
-        if 'source title' in str(col).lower():
-            source_title_col = col
-            break
-
-    if source_title_col is None:
-        st.error("No 'Source title' column found in the input file.")
-        return None
-
-    journals = user_df[source_title_col].astype(str).apply(standardize_text)
-
-    scimago_titles = scimago_df['Title'].tolist()
-    scimago_sjr_dict = dict(zip(scimago_df['Title'], scimago_df['SJR']))
-    scimago_quartile_dict = dict(zip(scimago_df['Title'], scimago_df['SJR Best Quartile']))
-
-    results = []
-    for journal in tqdm(journals, desc="Matching journals"):
-        if pd.isna(journal) or journal.strip() == "":
-            results.append(("No journal name", "No match", 0, "", ""))
-            continue
-
-        match = process.extractOne(journal, scimago_titles, scorer=fuzz.ratio, score_cutoff=90)
-        if match:
-            matched_title = match[0]
-            sjr = scimago_sjr_dict.get(matched_title, "")
-            quartile = scimago_quartile_dict.get(matched_title, "")
-            results.append((journal, matched_title, match[1], sjr, quartile))
-        else:
-            results.append((journal, "No match", 0, "", ""))
-
-    results_df = pd.DataFrame(results, columns=[
-        'Processed Journal Name', 'Best Match', 'Match Score', 'SJR (Impact)', 'SJR Quartile'
-    ])
-
-    final_df = pd.concat([user_df, results_df], axis=1)
-    final_df = final_df.sort_values(by='Match Score', ascending=True)
-    final_df.attrs['new_columns'] = ['Best Match', 'Match Score', 'SJR (Impact)', 'SJR Quartile']
-    return final_df
-
-# Excel styling and download
-def to_excel_with_style(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Results')
-        workbook = writer.book
-        worksheet = writer.sheets['Results']
-        
-        # Highlight key columns
-        match_format = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-        score_format = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
-        quartile_format = workbook.add_format({'bg_color': '#D9E1F2', 'font_color': '#1F4E78'})
-
-        if 'Match Score' in df.columns:
-            col_idx = df.columns.get_loc('Match Score')
-            worksheet.set_column(col_idx, col_idx, 15, score_format)
-
-        for col_name in ['SJR (Impact)', 'SJR Quartile']:
-            if col_name in df.columns:
-                col_idx = df.columns.get_loc(col_name)
-                worksheet.set_column(col_idx, col_idx, 18, quartile_format)
-
-        worksheet.freeze_panes(1, 0)
-
-    output.seek(0)
-    return output
-
-def download_link(data, filename, label):
-    b64 = base64.b64encode(data.read()).decode()
-    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">{label}</a>'
-    return href
-
-# Main interaction
 if uploaded_file:
-    user_df = read_user_file(uploaded_file)
-    if user_df is not None:
-        st.write("### Preview of Uploaded File", user_df.head())
+    user_df = pd.read_excel(uploaded_file)
+    user_df['Journal Clean'] = user_df['Journal'].str.lower().str.strip()
 
-        if st.button("🔍 Match Journals with SCImago Data"):
-            final_df = process_single_file(user_df, scimago_df)
-            if final_df is not None:
-                st.write("### ✅ Matching Results", final_df)
+    matched_data = []
+    for journal in user_df['Journal Clean']:
+        match_if, score_if = process.extractOne(journal, impact_df['Journal Name Clean'])
+        match_q, score_q = process.extractOne(journal, quartile_df['Title Clean'])
 
-                # Stats
-                st.write("### 📊 Match Summary")
-                total = len(final_df)
-                perfect = (final_df['Match Score'] == 100).sum()
-                good = ((final_df['Match Score'] >= 90) & (final_df['Match Score'] < 100)).sum()
-                none = (final_df['Match Score'] == 0).sum()
-                st.markdown(f"- Total: **{total}** | Perfect: **{perfect}** | Good: **{good}** | No Match: **{none}**")
+        impact_info = impact_df[impact_df['Journal Name Clean'] == match_if].iloc[0]
+        quartile_info = quartile_df[quartile_df['Title Clean'] == match_q].iloc[0]
 
-                # Download
-                styled_excel = to_excel_with_style(final_df)
-                st.markdown(download_link(styled_excel, "Journal_Match_Results.xlsx", "📥 Download Excel Results"), unsafe_allow_html=True)
+        matched_data.append({
+            "Original Journal": journal,
+            "Matched IF Journal": impact_info['Journal Name'],
+            "Impact Factor": impact_info['Impact Factor'],
+            "IF Match Score": score_if,
+            "Matched Quartile Journal": quartile_info['Title'],
+            "SJR": quartile_info['SJR'],
+            "H-index": quartile_info['H index'],
+            "Quartile": quartile_info['Quartile'],
+            "Q Match Score": score_q
+        })
 
-    else:
-        st.error("Could not read the uploaded file. Please make sure it is a valid CSV or Excel file.")
+    result_df = pd.DataFrame(matched_data)
+    st.dataframe(result_df)
+
+    # Download matched results
+    def to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
+        return output.getvalue()
+
+    st.download_button("Download Matched Data", to_excel(result_df), "matched_journals.xlsx")
+
+    # Histogram of Impact Factors
+    st.subheader("Impact Factor Distribution")
+    fig1, ax1 = plt.subplots()
+    sns.histplot(result_df['Impact Factor'].dropna(), kde=True, ax=ax1, bins=20)
+    ax1.set_xlabel("Impact Factor")
+    ax1.set_ylabel("Frequency")
+    ax1.set_title("Distribution of Impact Factors")
+    st.pyplot(fig1)
+
+    # Download plot
+    buf1 = BytesIO()
+    fig1.savefig(buf1, format="png")
+    st.download_button("Download IF Histogram", buf1.getvalue(), "impact_factor_histogram.png")
+
+    # Quartile histogram
+    st.subheader("Quartile Distribution")
+    fig2, ax2 = plt.subplots()
+    sns.countplot(data=result_df, x="Quartile", order=sorted(result_df["Quartile"].dropna().unique()), ax=ax2)
+    ax2.set_title("Distribution of Quartiles")
+    ax2.set_ylabel("Number of Journals")
+    st.pyplot(fig2)
+
+    # Download Quartile plot
+    buf2 = BytesIO()
+    fig2.savefig(buf2, format="png")
+    st.download_button("Download Quartile Histogram", buf2.getvalue(), "quartile_histogram.png")
+
+    # Statistics
+    st.subheader("Statistical Summary")
+    st.write("**Impact Factor Statistics:**")
+    st.dataframe(result_df['Impact Factor'].describe())
+
+    st.write("**Quartile Counts:**")
+    st.dataframe(result_df['Quartile'].value_counts())
