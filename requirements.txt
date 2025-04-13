@@ -6,5 +6,5 @@ qrcode
 tqdm
 rapidfuzz
 xlsxwriter
-matplotlib.pyplot
+matplotlib
 seaborn
