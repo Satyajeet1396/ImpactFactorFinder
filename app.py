@@ -16,13 +16,13 @@ quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFind
 @st.cache_data
 def load_reference_data():
     impact_df = pd.read_excel(impact_url)
-
     # Read CSV robustly, forcing delimiter and skipping bad lines
     try:
         quartile_df = pd.read_csv(quartile_url, encoding='utf-8', on_bad_lines='skip')
     except:
         quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
 
+    # Trim whitespace from column names
     impact_df.columns = [col.strip() for col in impact_df.columns]
     quartile_df.columns = [col.strip() for col in quartile_df.columns]
 
@@ -49,11 +49,13 @@ def process_uploaded_file(user_df, impact_df, quartile_df):
     results = []
 
     for journal in user_df[journal_col].dropna():
-        match_if, score_if = fuzzy_match(journal, impact_df['Journal'].astype(str))
+        # <-- use "Source title" column from impact_df for matching -->
+        match_if, score_if = fuzzy_match(journal, impact_df['Source title'].astype(str))
         match_q, score_q = fuzzy_match(journal, quartile_df['Title'].astype(str))
 
-        row_if = impact_df[impact_df['Journal'] == match_if].iloc[0] if not impact_df[impact_df['Journal'] == match_if].empty else {}
-        row_q = quartile_df[quartile_df['Title'] == match_q].iloc[0] if not quartile_df[quartile_df['Title'] == match_q].empty else {}
+        # fetch the matched rows
+        row_if = impact_df[impact_df['Source title'] == match_if].iloc[0] if not impact_df[impact_df['Source title'] == match_if].empty else {}
+        row_q  = quartile_df[quartile_df['Title'] == match_q].iloc[0] if not quartile_df[quartile_df['Title'] == match_q].empty else {}
 
         results.append({
             'Uploaded Journal': journal,
@@ -100,6 +102,11 @@ if uploaded_file:
     
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
+
+        # debug: show actual column names if needed
+        # st.write("Impact DF columns:", impact_df.columns.tolist())
+        # st.write("Quartile DF columns:", quartile_df.columns.tolist())
+
         final_df = process_uploaded_file(user_df, impact_df, quartile_df)
 
         st.success("Matching complete!")
@@ -107,13 +114,25 @@ if uploaded_file:
 
         # Download Excel
         excel_data = to_excel_with_style(final_df)
-        st.download_button("📥 Download Matches as Excel", data=excel_data, file_name="journal_matches.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            "📥 Download Matches as Excel",
+            data=excel_data,
+            file_name="journal_matches.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
         # Plot IF Histogram
         st.subheader("📈 Impact Factor Distribution")
-        buf_if, fig_if = plot_histogram(final_df, 'Impact Factor', 'Impact Factor Distribution', 'Impact Factor')
+        buf_if, fig_if = plot_histogram(
+            final_df, 'Impact Factor', 'Impact Factor Distribution', 'Impact Factor'
+        )
         st.pyplot(fig_if)
-        st.download_button("📥 Download IF Histogram", data=buf_if, file_name="impact_factor_hist.png", mime="image/png")
+        st.download_button(
+            "📥 Download IF Histogram",
+            data=buf_if,
+            file_name="impact_factor_hist.png",
+            mime="image/png"
+        )
         st.markdown("**Statistics for Impact Factor**")
         st.dataframe(get_statistics(final_df, 'Impact Factor'))
 
@@ -130,7 +149,12 @@ if uploaded_file:
         fig_q.savefig(buf_q, format="png", bbox_inches="tight")
         buf_q.seek(0)
         st.pyplot(fig_q)
-        st.download_button("📥 Download Quartile Histogram", data=buf_q, file_name="quartile_hist.png", mime="image/png")
+        st.download_button(
+            "📥 Download Quartile Histogram",
+            data=buf_q,
+            file_name="quartile_hist.png",
+            mime="image/png"
+        )
         st.markdown("**Statistics for Quartile Counts**")
         st.dataframe(quartile_counts)
 else:
