@@ -20,6 +20,7 @@ def load_reference_data():
     except:
         quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
 
+    # strip whitespace
     impact_df.columns = [c.strip() for c in impact_df.columns]
     quartile_df.columns = [c.strip() for c in quartile_df.columns]
 
@@ -30,12 +31,10 @@ def detect_and_rename(df, target_name, keywords):
     """
     Find among df.columns the one that contains any of keywords (case-insensitive),
     pick the candidate with most unique values, and rename it to target_name.
-    Returns True if rename succeeded, False otherwise.
     """
     candidates = [c for c in df.columns if any(k in c.lower() for k in keywords)]
     if not candidates:
         return False
-    # pick the one with most unique entries (likely the journal/title column)
     best = max(candidates, key=lambda c: df[c].nunique())
     df.rename(columns={best: target_name}, inplace=True)
     return True
@@ -110,10 +109,17 @@ if uploaded_file:
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
 
-        # auto‐detect & rename your journal columns:
-        if not detect_and_rename(impact_df, 'Source title', ['source', 'journal', 'title']):
+        # 1) Rename your IF-journal column (e.g. "Name") → "Source title"
+        if not detect_and_rename(impact_df, 'Source title', ['source','journal','title','name']):
             st.error(f"Could not find a journal column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
             st.stop()
+
+        # 2) Rename your IF-value column (e.g. "JIF") → "Impact Factor"
+        if not detect_and_rename(impact_df, 'Impact Factor', ['impact factor','jif']):
+            st.error(f"Could not find an Impact-Factor column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
+            st.stop()
+
+        # 3) Rename your Scimago title column → "Title"
         if not detect_and_rename(quartile_df, 'Title', ['title']):
             st.error(f"Could not find a title column in Quartile data. Columns are: {quartile_df.columns.tolist()}")
             st.stop()
@@ -136,8 +142,7 @@ if uploaded_file:
         st.subheader("📈 Impact Factor Distribution")
         buf_if, fig_if = plot_histogram(
             final_df, 'Impact Factor',
-            'Impact Factor Distribution',
-            'Impact Factor'
+            'Impact Factor Distribution', 'Impact Factor'
         )
         st.pyplot(fig_if)
         st.download_button(
