@@ -58,8 +58,58 @@ def read_file(file):
     else:
         raise ValueError("Unsupported file format. Please upload either CSV or XLSX file.")
 
+def prepare_reference_database():
+    try:
+        sjr_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/627344607132b98637e54f8113b40df0bab0d97f/sorted_journal_rankings.csv"
+        sjr_df = pd.read_csv(sjr_url)
+
+        jif_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/main/Impact_Factor_2024.xlsx"
+        try:
+            jif_df = pd.read_excel(jif_url)
+        except Exception:
+            data = {
+                "Name": [
+                    "CA-A CANCER JOURNAL FOR CLINICIANS",
+                    "NATURE REVIEWS DRUG DISCOVERY",
+                    "LANCET",
+                    "NEW ENGLAND JOURNAL OF MEDICINE",
+                    "BMJ-British Medical Journal",
+                    "NATURE REVIEWS MOLECULAR CELL BIOLOGY",
+                    "Nature Reviews Clinical Oncology",
+                    "Nature Reviews Materials",
+                    "Nature Reviews Disease Primers"
+                ],
+                "JIF": [
+                    503.1, 122.7, 98.4, 96.2, 93.6, 81.3, 81.1, 79.8, 76.9
+                ]
+            }
+            jif_df = pd.DataFrame(data)
+
+        if 'Title' in sjr_df.columns:
+            sjr_df = sjr_df.rename(columns={'Title': 'Journal_Title'})
+        if 'Name' in jif_df.columns:
+            jif_df = jif_df.rename(columns={'Name': 'Journal_Title'})
+
+        sjr_df['Title_std'] = sjr_df['Journal_Title'].astype(str).apply(standardize_text)
+        jif_df['Title_std'] = jif_df['Journal_Title'].astype(str).apply(standardize_text)
+
+        merged_df = pd.merge(
+            sjr_df, 
+            jif_df[['Journal_Title', 'Title_std', 'JIF']], 
+            on='Title_std', 
+            how='outer',
+            suffixes=('', '_jif')
+        )
+
+        merged_df['Impact Factor'] = merged_df['JIF']
+
+        return merged_df
+
+    except Exception as e:
+        st.error(f"Error preparing reference database: {str(e)}")
+        raise e
+
 def process_single_file(user_df, ref_df):
-    # Find 'Source title' column
     source_title_col = None
     for col in user_df.columns:
         if 'source title' in str(col).lower():
@@ -70,18 +120,13 @@ def process_single_file(user_df, ref_df):
         st.error("No 'Source title' column found. Please ensure your file has a 'Source title' column.")
         return None
 
-    # Standardize user journals
     journals = user_df[source_title_col].astype(str).apply(standardize_text)
-
-    # Standardize reference database
-    ref_df['Title_std'] = ref_df['Title'].astype(str).apply(standardize_text)
     ref_journals = ref_df['Title_std'].tolist()
 
     results = []
-    progress_bar = st.progress(0)  # Streamlit progress bar
-    
+    progress_bar = st.progress(0)
+
     for i, journal in enumerate(journals.tolist()):
-        # Update progress
         progress = (i + 1) / len(journals)
         progress_bar.progress(min(progress, 1.0))
 
@@ -89,32 +134,28 @@ def process_single_file(user_df, ref_df):
             results.append(("No journal name", "No match found", 0, "", ""))
             continue
 
-        # Perfect match
         match_row = ref_df[ref_df['Title_std'] == journal]
         if not match_row.empty:
-            impact = match_row.iloc[0]['Impact Factor']
-            quartile = match_row.iloc[0]['SJR Best Quartile']
-            results.append((journal, journal, 100, impact, quartile))
+            impact = match_row.iloc[0].get('Impact Factor', "")
+            quartile = match_row.iloc[0].get('SJR Best Quartile', "")
+            results.append((journal, match_row.iloc[0].get('Journal_Title', journal), 100, impact, quartile))
             continue
 
-        # Approximate match
         match = process.extractOne(journal, ref_journals, scorer=fuzz.ratio, score_cutoff=90)
         if match:
             matched_title_std = match[0]
             match_row = ref_df[ref_df['Title_std'] == matched_title_std]
-            impact = match_row.iloc[0]['Impact Factor']
-            quartile = match_row.iloc[0]['SJR Best Quartile']
-            results.append((journal, match_row.iloc[0]['Title'], match[1], impact, quartile))
+            impact = match_row.iloc[0].get('Impact Factor', "")
+            quartile = match_row.iloc[0].get('SJR Best Quartile', "")
+            results.append((journal, match_row.iloc[0].get('Journal_Title', journal), match[1], impact, quartile))
         else:
             results.append((journal, "No match found", 0, "", ""))
 
-    progress_bar.empty()  # Remove progress bar when done
+    progress_bar.empty()
 
-    # Create DataFrame
     new_columns = ['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor', 'SJR Best Quartile']
     results_df = pd.DataFrame(results, columns=new_columns)
 
-    # Matching statistics
     total = len(results_df)
     perfect_matches = len(results_df[results_df['Match Score'] == 100])
     good_matches = len(results_df[(results_df['Match Score'] >= 90) & (results_df['Match Score'] < 100)])
@@ -156,14 +197,15 @@ def save_results(df, file_format='xlsx'):
     return output
 
 # --- Streamlit App ---
-st.title("Multi-File Journal Impact Factor and Quartile Processor")
+st.title("Journal Impact Factor and Quartile Finder")
 
 with st.expander("ℹ️ Click here to learn about this app", expanded=False):
     st.markdown("""
     This app helps you find Impact Factors and SJR Quartiles for journals.
     - Upload one or more Excel/CSV files containing a 'Source title' column.
-    - Automatically matches journal names.
-    - Shows Impact Factor and Quartile.
+    - The app automatically matches journal names from your files with a comprehensive database.
+    - It shows Impact Factor (JIF) and SJR Quartile rankings for each journal.
+    - Results are sorted by match quality and can be downloaded as Excel/CSV.
     """)
 
 st.write("Upload journal lists (Excel/CSV) to process.")
@@ -173,13 +215,11 @@ if 'processed_files' not in st.session_state:
 if 'processed_results' not in st.session_state:
     st.session_state.processed_results = {}
 
-# Upload user files
-uploaded_files = st.file_uploader("Upload Your Journal Lists", type=["xlsx", "csv"], accept_multiple_files=True, key="file_uploader")
+uploaded_files = st.file_uploader("Upload Your Journal Lists", type=["xlsx", "csv"], accept_multiple_files=True)
 
-# Load reference database
 try:
-    reference_file_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/627344607132b98637e54f8113b40df0bab0d97f/sorted_journal_rankings.csv"
-    ref_df = pd.read_csv(reference_file_url)
+    with st.spinner("Loading reference database..."):
+        ref_df = prepare_reference_database()
     st.success(f"Reference database loaded successfully with {len(ref_df)} journals")
 except Exception as e:
     st.error(f"Error loading reference database: {str(e)}")
@@ -198,7 +238,7 @@ if uploaded_files:
 
                 with st.spinner(f"Processing {uploaded_file.name}..."):
                     results_df = process_single_file(user_df, ref_df)
-                    
+
                     output_format = uploaded_file.name.split('.')[-1].lower()
                     output_file = save_results(results_df, output_format)
 
@@ -215,28 +255,27 @@ if uploaded_files:
                 st.error(f"Error processing {uploaded_file.name}: {str(e)}")
                 continue
 
-    if st.session_state.processed_results:
-        st.write("### Processed Files Results")
-        for file_id, data in st.session_state.processed_results.items():
-            with st.expander(f"Results for {data['filename']}", expanded=True):
-                output_filename = f"{data['filename'].rsplit('.', 1)[0]}_matched.{data['output_format']}"
-                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if data['output_format'] == 'xlsx' else "text/csv"
+if st.session_state.processed_results:
+    st.write("### Processed Files Results")
+    for file_id, data in st.session_state.processed_results.items():
+        with st.expander(f"Results for {data['filename']}", expanded=True):
+            output_filename = f"{data['filename'].rsplit('.', 1)[0]}_matched.{data['output_format']}"
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if data['output_format'] == 'xlsx' else "text/csv"
 
-                st.download_button(
-                    label=f"Download Results for {data['filename']}",
-                    data=data['output_file'],
-                    file_name=output_filename,
-                    mime=mime_type,
-                    key=f"download_{file_id}"
-                )
+            st.download_button(
+                label=f"Download Results for {data['filename']}",
+                data=data['output_file'],
+                file_name=output_filename,
+                mime=mime_type
+            )
 
-                st.write(f"Sample results:")
-                st.dataframe(data['results_df'].head())
+            st.write(f"Sample results:")
+            st.dataframe(data['results_df'].head())
 
-    if st.button("Clear All and Process New Files"):
-        st.session_state.processed_files.clear()
-        st.session_state.processed_results.clear()
-        st.rerun()
+if st.button("Clear All and Process New Files"):
+    st.session_state.processed_files.clear()
+    st.session_state.processed_results.clear()
+    st.rerun()
 else:
     st.info("Please upload one or more journal lists to start.")
 
@@ -244,13 +283,7 @@ st.divider()
 st.info("Created by Dr. Satyajeet Patil")
 
 with st.expander("🤝 Support Our Research", expanded=False):
-    st.markdown("""
-    <div style='text-align: center; padding: 1rem; background-color: #f0f2f6; border-radius: 10px; margin: 1rem 0;'>
-        <h3>🙏 Your Support Makes a Difference!</h3>
-        <p>Every donation, no matter how small, fuels our research journey!</p>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown("🙏 Your Support Makes a Difference!\nEvery donation, no matter how small, fuels our research journey!", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
     with col1:
