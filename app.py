@@ -20,40 +20,30 @@ def load_reference_data():
     except:
         quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
 
-    # strip whitespace
     impact_df.columns = [c.strip() for c in impact_df.columns]
     quartile_df.columns = [c.strip() for c in quartile_df.columns]
 
-    # auto-rename whatever your IF sheet calls it to exactly "Source title"
-    source_col = next(
-        (c for c in impact_df.columns if c.lower() == "source title"),
-        None
-    ) or next(
-        (c for c in impact_df.columns if "source" in c.lower()),
-        None
-    )
-    if source_col:
-        impact_df.rename(columns={source_col: "Source title"}, inplace=True)
-
-    # auto-rename whatever your Scimago sheet calls its title to exactly "Title"
-    title_col = next(
-        (c for c in quartile_df.columns if c.lower() == "title"),
-        None
-    ) or next(
-        (c for c in quartile_df.columns if "title" in c.lower()),
-        None
-    )
-    if title_col:
-        quartile_df.rename(columns={title_col: "Title"}, inplace=True)
-
     return impact_df, quartile_df
 
-# ------------------ FUZZY MATCHING ------------------ #
+# ------------------ HELPERS ------------------ #
+def detect_and_rename(df, target_name, keywords):
+    """
+    Find among df.columns the one that contains any of keywords (case-insensitive),
+    pick the candidate with most unique values, and rename it to target_name.
+    Returns True if rename succeeded, False otherwise.
+    """
+    candidates = [c for c in df.columns if any(k in c.lower() for k in keywords)]
+    if not candidates:
+        return False
+    # pick the one with most unique entries (likely the journal/title column)
+    best = max(candidates, key=lambda c: df[c].nunique())
+    df.rename(columns={best: target_name}, inplace=True)
+    return True
+
 def fuzzy_match(journal_name, reference_list):
     match, score = process.extractOne(journal_name, reference_list)
     return match, score
 
-# ------------------ READ USER FILE ------------------ #
 def read_uploaded_file(uploaded_file):
     if uploaded_file.name.endswith('.csv'):
         return pd.read_csv(uploaded_file)
@@ -63,7 +53,6 @@ def read_uploaded_file(uploaded_file):
         st.error("Unsupported file type. Please upload a CSV or Excel file.")
         return None
 
-# ------------------ PROCESS FILE ------------------ #
 def process_uploaded_file(user_df, impact_df, quartile_df):
     journal_col = user_df.columns[0]
     results = []
@@ -76,19 +65,18 @@ def process_uploaded_file(user_df, impact_df, quartile_df):
         row_q  = quartile_df[quartile_df['Title'] == match_q].iloc[0]          if not quartile_df[quartile_df['Title'] == match_q].empty           else {}
 
         results.append({
-            'Uploaded Journal':              journal,
-            'Matched Journal (IF)':          match_if,
-            'Impact Factor':                 row_if.get('Impact Factor', ''),
-            'IF Match Score':                score_if,
-            'Matched Journal (Quartile)':    match_q,
-            'SJR':                           row_q.get('SJR', ''),
-            'Quartile':                      row_q.get('Quartile', ''),
-            'Q Match Score':                 score_q
+            'Uploaded Journal':           journal,
+            'Matched Journal (IF)':       match_if,
+            'Impact Factor':              row_if.get('Impact Factor', ''),
+            'IF Match Score':             score_if,
+            'Matched Journal (Quartile)': match_q,
+            'SJR':                        row_q.get('SJR', ''),
+            'Quartile':                   row_q.get('Quartile', ''),
+            'Q Match Score':              score_q
         })
 
     return pd.DataFrame(results)
 
-# ------------------ EXPORT TO EXCEL ------------------ #
 def to_excel_with_style(df):
     output = BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -96,7 +84,6 @@ def to_excel_with_style(df):
     writer.close()
     return output.getvalue()
 
-# ------------------ HISTOGRAM & STATS ------------------ #
 def plot_histogram(data, column, title, xlabel):
     fig, ax = plt.subplots()
     sns.histplot(data[column].dropna(), kde=True, bins=20, ax=ax)
@@ -123,9 +110,13 @@ if uploaded_file:
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
 
-        # (uncomment these if you still need to debug column names)
-        # st.write("Impact DF columns:", impact_df.columns.tolist())
-        # st.write("Quartile DF columns:", quartile_df.columns.tolist())
+        # auto‐detect & rename your journal columns:
+        if not detect_and_rename(impact_df, 'Source title', ['source', 'journal', 'title']):
+            st.error(f"Could not find a journal column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
+            st.stop()
+        if not detect_and_rename(quartile_df, 'Title', ['title']):
+            st.error(f"Could not find a title column in Quartile data. Columns are: {quartile_df.columns.tolist()}")
+            st.stop()
 
         final_df = process_uploaded_file(user_df, impact_df, quartile_df)
 
@@ -179,5 +170,6 @@ if uploaded_file:
         )
         st.markdown("**Statistics for Quartile Counts**")
         st.dataframe(quartile_counts)
+
 else:
     st.info("Please upload a file to begin.")
