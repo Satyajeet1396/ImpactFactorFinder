@@ -5,38 +5,30 @@ import seaborn as sns
 from io import BytesIO
 from fuzzywuzzy import process
 
-# ------------------ CONFIG ------------------ #
+# ------------------ PAGE CONFIG ------------------ #
 st.set_page_config(page_title="Impact Factor & Quartile Finder", layout="wide")
 
-impact_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/6f99aed8fc7d0c558b7cd35ecb022e2500c8aa16/Impact%20Factor%202024.xlsx"
-quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/45236668ebf6c9283a7f5e49457fa78681529f26/scimagojr%202024.csv"
+# ------------------ LINKS TO GITHUB FILES ------------------ #
+impact_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/main/Impact%20Factor%202024.xlsx"
+quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/main/scimagojr%202024.csv"
 
-# ------------------ LOAD DATA ------------------ #
+# ------------------ LOAD REFERENCE DATA ------------------ #
 @st.cache_data
 def load_reference_data():
     impact_df = pd.read_excel(impact_url)
-    try:
-        quartile_df = pd.read_csv(quartile_url, encoding='utf-8', on_bad_lines='skip')
-    except:
-        quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
+    quartile_df = pd.read_csv(quartile_url, sep=";", header=None, on_bad_lines='skip')
 
-    impact_df.columns = [c.strip() for c in impact_df.columns]
-    quartile_df.columns = [c.strip() for c in quartile_df.columns]
+    # For Impact Factor file
+    impact_df.rename(columns={"Name": "Journal Name", "JIF": "Impact Factor"}, inplace=True)
 
+    # For Quartile file
+    quartile_df.columns = ['Rank', 'SJR', 'Title', 'Type', 'ISSN', 'Country', 'H index', 'Total Docs', 'Total Refs', 'Total Cites', 'Quartile']
+    
     return impact_df, quartile_df
 
-# ------------------ HELPERS ------------------ #
-def detect_and_rename(df, target_name, keywords):
-    candidates = [c for c in df.columns if any(k in c.lower() for k in keywords)]
-    if not candidates:
-        return False
-    best = max(candidates, key=lambda c: df[c].nunique())
-    df.rename(columns={best: target_name}, inplace=True)
-    return True
-
-def fuzzy_match(query, reference_series):
-    # build a clean list of strings
-    choices = [s for s in reference_series.dropna().astype(str).unique() if s.strip()]
+# ------------------ FUZZY MATCH HELPER ------------------ #
+def fuzzy_match(query, reference_list):
+    choices = [str(x) for x in reference_list.dropna().unique()]
     if not choices:
         return "", 0
     try:
@@ -45,6 +37,7 @@ def fuzzy_match(query, reference_series):
     except Exception:
         return "", 0
 
+# ------------------ READ UPLOADED FILE ------------------ #
 def read_uploaded_file(uploaded_file):
     if uploaded_file.name.endswith('.csv'):
         return pd.read_csv(uploaded_file)
@@ -54,34 +47,40 @@ def read_uploaded_file(uploaded_file):
         st.error("Unsupported file type. Please upload a CSV or Excel file.")
         return None
 
+# ------------------ PROCESS UPLOADED JOURNALS ------------------ #
 def process_uploaded_file(user_df, impact_df, quartile_df):
-    journal_col = user_df.columns[0]
+    if 'Source title' not in user_df.columns:
+        st.error("Uploaded file must contain a 'Source title' column.")
+        st.stop()
+
     results = []
 
-    for raw in user_df[journal_col].dropna().astype(str):
-        journal = raw.strip()
+    for journal in user_df['Source title'].dropna().astype(str):
+        journal = journal.strip()
         if not journal:
             continue
 
-        match_if, score_if = fuzzy_match(journal, impact_df['Source title'])
-        match_q,  score_q  = fuzzy_match(journal, quartile_df['Title'])
+        # Match with Impact Factor file
+        match_if, score_if = fuzzy_match(journal, impact_df['Journal Name'])
+        row_if = impact_df.loc[impact_df['Journal Name'] == match_if].squeeze() if match_if else {}
 
-        row_if = impact_df.loc[impact_df['Source title'] == match_if].squeeze() if match_if else {}
-        row_q  = quartile_df.loc[quartile_df['Title'] == match_q].squeeze() if match_q else {}
+        # Match with Quartile file
+        match_q, score_q = fuzzy_match(journal, quartile_df['Title'])
+        row_q = quartile_df.loc[quartile_df['Title'] == match_q].squeeze() if match_q else {}
 
         results.append({
-            'Uploaded Journal':           journal,
-            'Matched Journal (IF)':       match_if,
-            'Impact Factor':              getattr(row_if, 'Impact Factor', ''),
-            'IF Match Score':             score_if,
+            'Uploaded Journal': journal,
+            'Matched Journal (IF)': match_if,
+            'Impact Factor': row_if.get('Impact Factor', ''),
+            'IF Match Score': score_if,
             'Matched Journal (Quartile)': match_q,
-            'SJR':                        getattr(row_q, 'SJR', ''),
-            'Quartile':                   getattr(row_q, 'Quartile', ''),
-            'Q Match Score':              score_q
+            'Quartile': row_q.get('Quartile', ''),
+            'Q Match Score': score_q
         })
 
     return pd.DataFrame(results)
 
+# ------------------ EXPORT TO EXCEL ------------------ #
 def to_excel_with_style(df):
     output = BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -89,6 +88,7 @@ def to_excel_with_style(df):
     writer.close()
     return output.getvalue()
 
+# ------------------ HISTOGRAM HELPERS ------------------ #
 def plot_histogram(data, column, title, xlabel):
     fig, ax = plt.subplots()
     sns.histplot(data[column].dropna(), kde=True, bins=20, ax=ax)
@@ -103,10 +103,10 @@ def get_statistics(df, column):
     return df[column].dropna().describe()
 
 # ------------------ STREAMLIT APP ------------------ #
-st.title("📊 Impact Factor & Quartile Finder (2024)")
+st.title("📚 Journal Impact Factor and Quartile Finder (2024)")
 
 uploaded_file = st.file_uploader(
-    "Upload CSV or Excel with Journal Names in First Column",
+    "Upload your CSV or Excel file (must have 'Source title' column):",
     type=["csv", "xlsx", "xls"]
 )
 
@@ -115,25 +115,12 @@ if uploaded_file:
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
 
-        # rename IF-sheet columns:
-        if not detect_and_rename(impact_df, 'Source title',   ['source', 'journal', 'title', 'name']):
-            st.error(f"Could not find a journal column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
-            st.stop()
-        if not detect_and_rename(impact_df, 'Impact Factor',  ['impact factor', 'jif']):
-            st.error(f"Could not find an Impact-Factor column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
-            st.stop()
-
-        # rename Scimago-sheet column:
-        if not detect_and_rename(quartile_df, 'Title', ['title']):
-            st.error(f"Could not find a title column in Quartile data. Columns are: {quartile_df.columns.tolist()}")
-            st.stop()
-
         final_df = process_uploaded_file(user_df, impact_df, quartile_df)
 
         st.success("Matching complete!")
         st.dataframe(final_df)
 
-        # Excel download
+        # Download matched data
         excel_data = to_excel_with_style(final_df)
         st.download_button(
             "📥 Download Matches as Excel",
@@ -142,7 +129,7 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # IF histogram
+        # Impact Factor histogram
         st.subheader("📈 Impact Factor Distribution")
         buf_if, fig_if = plot_histogram(final_df, 'Impact Factor', 'Impact Factor Distribution', 'Impact Factor')
         st.pyplot(fig_if)
@@ -168,4 +155,4 @@ if uploaded_file:
         st.dataframe(quartile_counts)
 
 else:
-    st.info("Please upload a file to begin.")
+    st.info("Please upload your file to start matching.")
