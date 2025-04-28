@@ -20,7 +20,6 @@ def load_reference_data():
     except:
         quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
 
-    # strip whitespace
     impact_df.columns = [c.strip() for c in impact_df.columns]
     quartile_df.columns = [c.strip() for c in quartile_df.columns]
 
@@ -28,10 +27,6 @@ def load_reference_data():
 
 # ------------------ HELPERS ------------------ #
 def detect_and_rename(df, target_name, keywords):
-    """
-    Find among df.columns the one that contains any of keywords (case-insensitive),
-    pick the candidate with most unique values, and rename it to target_name.
-    """
     candidates = [c for c in df.columns if any(k in c.lower() for k in keywords)]
     if not candidates:
         return False
@@ -39,9 +34,16 @@ def detect_and_rename(df, target_name, keywords):
     df.rename(columns={best: target_name}, inplace=True)
     return True
 
-def fuzzy_match(journal_name, reference_list):
-    match, score = process.extractOne(journal_name, reference_list)
-    return match, score
+def fuzzy_match(query, reference_series):
+    # build a clean list of strings
+    choices = [s for s in reference_series.dropna().astype(str).unique() if s.strip()]
+    if not choices:
+        return "", 0
+    try:
+        match, score = process.extractOne(str(query), choices)
+        return match or "", score or 0
+    except Exception:
+        return "", 0
 
 def read_uploaded_file(uploaded_file):
     if uploaded_file.name.endswith('.csv'):
@@ -56,21 +58,25 @@ def process_uploaded_file(user_df, impact_df, quartile_df):
     journal_col = user_df.columns[0]
     results = []
 
-    for journal in user_df[journal_col].dropna():
-        match_if, score_if = fuzzy_match(journal, impact_df['Source title'].astype(str))
-        match_q,  score_q  = fuzzy_match(journal, quartile_df['Title'].astype(str))
+    for raw in user_df[journal_col].dropna().astype(str):
+        journal = raw.strip()
+        if not journal:
+            continue
 
-        row_if = impact_df[impact_df['Source title'] == match_if].iloc[0] if not impact_df[impact_df['Source title'] == match_if].empty else {}
-        row_q  = quartile_df[quartile_df['Title'] == match_q].iloc[0]          if not quartile_df[quartile_df['Title'] == match_q].empty           else {}
+        match_if, score_if = fuzzy_match(journal, impact_df['Source title'])
+        match_q,  score_q  = fuzzy_match(journal, quartile_df['Title'])
+
+        row_if = impact_df.loc[impact_df['Source title'] == match_if].squeeze() if match_if else {}
+        row_q  = quartile_df.loc[quartile_df['Title'] == match_q].squeeze() if match_q else {}
 
         results.append({
             'Uploaded Journal':           journal,
             'Matched Journal (IF)':       match_if,
-            'Impact Factor':              row_if.get('Impact Factor', ''),
+            'Impact Factor':              getattr(row_if, 'Impact Factor', ''),
             'IF Match Score':             score_if,
             'Matched Journal (Quartile)': match_q,
-            'SJR':                        row_q.get('SJR', ''),
-            'Quartile':                   row_q.get('Quartile', ''),
+            'SJR':                        getattr(row_q, 'SJR', ''),
+            'Quartile':                   getattr(row_q, 'Quartile', ''),
             'Q Match Score':              score_q
         })
 
@@ -109,17 +115,15 @@ if uploaded_file:
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
 
-        # 1) Rename your IF-journal column (e.g. "Name") → "Source title"
-        if not detect_and_rename(impact_df, 'Source title', ['source','journal','title','name']):
+        # rename IF-sheet columns:
+        if not detect_and_rename(impact_df, 'Source title',   ['source', 'journal', 'title', 'name']):
             st.error(f"Could not find a journal column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
             st.stop()
-
-        # 2) Rename your IF-value column (e.g. "JIF") → "Impact Factor"
-        if not detect_and_rename(impact_df, 'Impact Factor', ['impact factor','jif']):
+        if not detect_and_rename(impact_df, 'Impact Factor',  ['impact factor', 'jif']):
             st.error(f"Could not find an Impact-Factor column in Impact-Factor data. Columns are: {impact_df.columns.tolist()}")
             st.stop()
 
-        # 3) Rename your Scimago title column → "Title"
+        # rename Scimago-sheet column:
         if not detect_and_rename(quartile_df, 'Title', ['title']):
             st.error(f"Could not find a title column in Quartile data. Columns are: {quartile_df.columns.tolist()}")
             st.stop()
@@ -140,17 +144,9 @@ if uploaded_file:
 
         # IF histogram
         st.subheader("📈 Impact Factor Distribution")
-        buf_if, fig_if = plot_histogram(
-            final_df, 'Impact Factor',
-            'Impact Factor Distribution', 'Impact Factor'
-        )
+        buf_if, fig_if = plot_histogram(final_df, 'Impact Factor', 'Impact Factor Distribution', 'Impact Factor')
         st.pyplot(fig_if)
-        st.download_button(
-            "📥 Download IF Histogram",
-            data=buf_if,
-            file_name="impact_factor_hist.png",
-            mime="image/png"
-        )
+        st.download_button("📥 Download IF Histogram", data=buf_if, file_name="impact_factor_hist.png", mime="image/png")
         st.markdown("**Statistics for Impact Factor**")
         st.dataframe(get_statistics(final_df, 'Impact Factor'))
 
@@ -167,12 +163,7 @@ if uploaded_file:
         fig_q.savefig(buf_q, format="png", bbox_inches="tight")
         buf_q.seek(0)
         st.pyplot(fig_q)
-        st.download_button(
-            "📥 Download Quartile Histogram",
-            data=buf_q,
-            file_name="quartile_hist.png",
-            mime="image/png"
-        )
+        st.download_button("📥 Download Quartile Histogram", data=buf_q, file_name="quartile_hist.png", mime="image/png")
         st.markdown("**Statistics for Quartile Counts**")
         st.dataframe(quartile_counts)
 
