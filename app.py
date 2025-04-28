@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from io import BytesIO
 from fuzzywuzzy import process
-import base64
 
 # ------------------ CONFIG ------------------ #
 st.set_page_config(page_title="Impact Factor & Quartile Finder", layout="wide")
@@ -16,15 +15,36 @@ quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFind
 @st.cache_data
 def load_reference_data():
     impact_df = pd.read_excel(impact_url)
-    # Read CSV robustly, forcing delimiter and skipping bad lines
     try:
         quartile_df = pd.read_csv(quartile_url, encoding='utf-8', on_bad_lines='skip')
     except:
         quartile_df = pd.read_csv(quartile_url, encoding='latin1', on_bad_lines='skip')
 
-    # Trim whitespace from column names
-    impact_df.columns = [col.strip() for col in impact_df.columns]
-    quartile_df.columns = [col.strip() for col in quartile_df.columns]
+    # strip whitespace
+    impact_df.columns = [c.strip() for c in impact_df.columns]
+    quartile_df.columns = [c.strip() for c in quartile_df.columns]
+
+    # auto-rename whatever your IF sheet calls it to exactly "Source title"
+    source_col = next(
+        (c for c in impact_df.columns if c.lower() == "source title"),
+        None
+    ) or next(
+        (c for c in impact_df.columns if "source" in c.lower()),
+        None
+    )
+    if source_col:
+        impact_df.rename(columns={source_col: "Source title"}, inplace=True)
+
+    # auto-rename whatever your Scimago sheet calls its title to exactly "Title"
+    title_col = next(
+        (c for c in quartile_df.columns if c.lower() == "title"),
+        None
+    ) or next(
+        (c for c in quartile_df.columns if "title" in c.lower()),
+        None
+    )
+    if title_col:
+        quartile_df.rename(columns={title_col: "Title"}, inplace=True)
 
     return impact_df, quartile_df
 
@@ -49,23 +69,21 @@ def process_uploaded_file(user_df, impact_df, quartile_df):
     results = []
 
     for journal in user_df[journal_col].dropna():
-        # <-- use "Source title" column from impact_df for matching -->
         match_if, score_if = fuzzy_match(journal, impact_df['Source title'].astype(str))
-        match_q, score_q = fuzzy_match(journal, quartile_df['Title'].astype(str))
+        match_q,  score_q  = fuzzy_match(journal, quartile_df['Title'].astype(str))
 
-        # fetch the matched rows
         row_if = impact_df[impact_df['Source title'] == match_if].iloc[0] if not impact_df[impact_df['Source title'] == match_if].empty else {}
-        row_q  = quartile_df[quartile_df['Title'] == match_q].iloc[0] if not quartile_df[quartile_df['Title'] == match_q].empty else {}
+        row_q  = quartile_df[quartile_df['Title'] == match_q].iloc[0]          if not quartile_df[quartile_df['Title'] == match_q].empty           else {}
 
         results.append({
-            'Uploaded Journal': journal,
-            'Matched Journal (IF)': match_if,
-            'Impact Factor': row_if.get('Impact Factor', ''),
-            'IF Match Score': score_if,
-            'Matched Journal (Quartile)': match_q,
-            'SJR': row_q.get('SJR', ''),
-            'Quartile': row_q.get('Quartile', ''),
-            'Q Match Score': score_q
+            'Uploaded Journal':              journal,
+            'Matched Journal (IF)':          match_if,
+            'Impact Factor':                 row_if.get('Impact Factor', ''),
+            'IF Match Score':                score_if,
+            'Matched Journal (Quartile)':    match_q,
+            'SJR':                           row_q.get('SJR', ''),
+            'Quartile':                      row_q.get('Quartile', ''),
+            'Q Match Score':                 score_q
         })
 
     return pd.DataFrame(results)
@@ -95,15 +113,17 @@ def get_statistics(df, column):
 # ------------------ STREAMLIT APP ------------------ #
 st.title("📊 Impact Factor & Quartile Finder (2024)")
 
-uploaded_file = st.file_uploader("Upload CSV or Excel with Journal Names in First Column", type=["csv", "xlsx", "xls"])
+uploaded_file = st.file_uploader(
+    "Upload CSV or Excel with Journal Names in First Column",
+    type=["csv", "xlsx", "xls"]
+)
 
 if uploaded_file:
     user_df = read_uploaded_file(uploaded_file)
-    
     if user_df is not None:
         impact_df, quartile_df = load_reference_data()
 
-        # debug: show actual column names if needed
+        # (uncomment these if you still need to debug column names)
         # st.write("Impact DF columns:", impact_df.columns.tolist())
         # st.write("Quartile DF columns:", quartile_df.columns.tolist())
 
@@ -112,7 +132,7 @@ if uploaded_file:
         st.success("Matching complete!")
         st.dataframe(final_df)
 
-        # Download Excel
+        # Excel download
         excel_data = to_excel_with_style(final_df)
         st.download_button(
             "📥 Download Matches as Excel",
@@ -121,10 +141,12 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # Plot IF Histogram
+        # IF histogram
         st.subheader("📈 Impact Factor Distribution")
         buf_if, fig_if = plot_histogram(
-            final_df, 'Impact Factor', 'Impact Factor Distribution', 'Impact Factor'
+            final_df, 'Impact Factor',
+            'Impact Factor Distribution',
+            'Impact Factor'
         )
         st.pyplot(fig_if)
         st.download_button(
@@ -136,7 +158,7 @@ if uploaded_file:
         st.markdown("**Statistics for Impact Factor**")
         st.dataframe(get_statistics(final_df, 'Impact Factor'))
 
-        # Plot Quartile Histogram
+        # Quartile histogram
         st.subheader("📊 Quartile Distribution")
         final_df['Quartile'] = final_df['Quartile'].astype(str)
         quartile_counts = final_df['Quartile'].value_counts().sort_index()
