@@ -6,7 +6,6 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
 from io import BytesIO
 from functools import lru_cache
-from tqdm import tqdm
 import qrcode
 import base64
 
@@ -79,7 +78,13 @@ def process_single_file(user_df, ref_df):
     ref_journals = ref_df['Title_std'].tolist()
 
     results = []
-    for journal in tqdm(journals.tolist(), desc="Processing journals"):
+    progress_bar = st.progress(0)  # Streamlit progress bar
+    
+    for i, journal in enumerate(journals.tolist()):
+        # Update progress
+        progress = (i + 1) / len(journals)
+        progress_bar.progress(min(progress, 1.0))
+
         if pd.isna(journal) or str(journal).strip() == "":
             results.append(("No journal name", "No match found", 0, "", ""))
             continue
@@ -102,6 +107,8 @@ def process_single_file(user_df, ref_df):
             results.append((journal, match_row.iloc[0]['Title'], match[1], impact, quartile))
         else:
             results.append((journal, "No match found", 0, "", ""))
+
+    progress_bar.empty()  # Remove progress bar when done
 
     # Create DataFrame
     new_columns = ['Processed Journal Name', 'Best Match', 'Match Score', 'Impact Factor', 'SJR Best Quartile']
@@ -130,21 +137,18 @@ def process_single_file(user_df, ref_df):
 def save_results(df, file_format='xlsx'):
     output = BytesIO()
     if file_format == 'xlsx':
-        writer = pd.ExcelWriter(output, engine='openpyxl')
-        df.to_excel(writer, index=False)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
 
-        workbook = writer.book
-        worksheet = writer.sheets['Sheet1']
+            header_fill = PatternFill(start_color='0066CC', end_color='0066CC', fill_type='solid')
+            new_columns = df.attrs.get('new_columns', [])
 
-        header_fill = PatternFill(start_color='0066CC', end_color='0066CC', fill_type='solid')
-        new_columns = df.attrs.get('new_columns', [])
-
-        for cell in worksheet[1]:
-            if cell.value in new_columns:
-                cell.fill = header_fill
-                cell.font = Font(color='FFFFFF', bold=True)
-
-        writer.close()
+            for cell in worksheet[1]:
+                if cell.value in new_columns:
+                    cell.fill = header_fill
+                    cell.font = Font(color='FFFFFF', bold=True)
     else:
         df.to_csv(output, index=False)
 
@@ -194,7 +198,7 @@ if uploaded_files:
 
                 with st.spinner(f"Processing {uploaded_file.name}..."):
                     results_df = process_single_file(user_df, ref_df)
-
+                    
                     output_format = uploaded_file.name.split('.')[-1].lower()
                     output_file = save_results(results_df, output_format)
 
@@ -232,7 +236,7 @@ if uploaded_files:
     if st.button("Clear All and Process New Files"):
         st.session_state.processed_files.clear()
         st.session_state.processed_results.clear()
-        st.experimental_rerun()
+        st.rerun()
 else:
     st.info("Please upload one or more journal lists to start.")
 
