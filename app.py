@@ -16,26 +16,25 @@ quartile_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFind
 @st.cache_data
 def load_reference_data():
     impact_df = pd.read_excel(impact_url)
-    quartile_df = pd.read_csv(quartile_url, sep=";", header=None, on_bad_lines='skip')
+    quartile_df_raw = pd.read_csv(quartile_url, sep=";", header=None, on_bad_lines='skip')
 
     # For Impact Factor file
     impact_df.rename(columns={"Name": "Journal Name", "JIF": "Impact Factor"}, inplace=True)
 
     # For Quartile file
-    quartile_df.columns = ['Rank', 'SJR', 'Title', 'Type', 'ISSN', 'Country', 'H index', 'Total Docs', 'Total Refs', 'Total Cites', 'Quartile']
-    
-    return impact_df, quartile_df
+    # Check number of columns first
+    if quartile_df_raw.shape[1] == 13:
+        quartile_df_raw.columns = ['Rank', 'SJR', 'Title', 'Type', 'ISSN', 'Country', 'H index', 'Total Docs (3 years)', 'Total Docs (current year)', 'Total References', 'Total Cites (3 years)', 'Citable Docs (3 years)', 'Quartile']
+    elif quartile_df_raw.shape[1] == 11:
+        quartile_df_raw.columns = ['Rank', 'SJR', 'Title', 'Type', 'ISSN', 'Country', 'H index', 'Total Docs', 'Total Refs', 'Total Cites', 'Quartile']
+    elif quartile_df_raw.shape[1] == 5:
+        quartile_df_raw.columns = ['Rank', 'ID', 'Title', 'Type', 'ISSN']
+        quartile_df_raw['Quartile'] = None  # Add empty Quartile column
+    else:
+        st.error(f"Unexpected number of columns ({quartile_df_raw.shape[1]}) in Quartile file.")
+        st.stop()
 
-# ------------------ FUZZY MATCH HELPER ------------------ #
-def fuzzy_match(query, reference_list):
-    choices = [str(x) for x in reference_list.dropna().unique()]
-    if not choices:
-        return "", 0
-    try:
-        match, score = process.extractOne(str(query), choices)
-        return match or "", score or 0
-    except Exception:
-        return "", 0
+    return impact_df, quartile_df_raw
 
 # ------------------ READ UPLOADED FILE ------------------ #
 def read_uploaded_file(uploaded_file):
