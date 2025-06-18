@@ -234,7 +234,7 @@ uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=
 
 # Reference file loading with error handling
 try:
-    reference_file_url = "https://raw.githubusercontent.com/Satyajeet1396/ImpactFactorFinder/6f99aed8fc7d0c558b7cd35ecb022e2500c8aa16/Impact%20Factor%202024.xlsx"
+    reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/blob/e227e616500fc5a46292af5ba0bb7bea48cee9d0/Journal%20Impact_06_2025.xlsx"
     ref_df = pd.read_excel(reference_file_url)
     st.write(f"Successfully loaded reference database with {len(ref_df)} entries")
 except Exception as e:
