@@ -445,7 +445,7 @@ uploaded_files = st.file_uploader("Upload Your Journal Lists (Excel/CSV)", type=
 try:
     # You should replace this with your actual reference file path/URL
     reference_file_url = "reference_file_url = "https://github.com/Satyajeet1396/ImpactFactorFinder/raw/c48c0176e314f05e25f7a7c219f67ab9ab6d5237/IF2025JCR.xlsx"
-    try:
+try:
     ref_df = pd.read_excel(reference_file_url, engine='openpyxl')
     
     # Display reference file info
